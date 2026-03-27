@@ -8,7 +8,6 @@ import { CreateDeckDialog } from "@/features/decks/components/create-deck-dialog
 import { DeckCard } from "@/features/decks/components/deck-card"
 import { PresenterDeckSearch } from "@/features/presenter-shell"
 import { cn } from "@beyond/design-system"
-import { fontDisplay } from "@/lib/fonts/display"
 
 export const metadata = {
   title: "Decks — PlayDeck",
@@ -44,8 +43,7 @@ export default async function DecksPage(props: Props) {
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1
           className={cn(
-            fontDisplay.className,
-            "flex h-9 items-center text-2xl font-medium leading-9 tracking-[-0.02em] text-foreground sm:text-3xl"
+            "font-display flex h-9 items-center text-2xl font-medium leading-9 tracking-[-0.02em] text-foreground sm:text-3xl"
           )}
         >
           Decks

@@ -8,11 +8,16 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./fonts/next": {
+      "types": "./src/fonts/next.ts",
+      "default": "./src/fonts/next.ts"
+    },
     "./styles.css": "./src/styles.css"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "next": "16.2.1",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
@@ -20,6 +25,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.7.0",
+    "next": "^15.0.0 || ^16.0.0",
     "next-themes": "^0.4.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

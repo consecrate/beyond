@@ -7,15 +7,23 @@
   "scripts": {
     "dev": "turbo run dev --filter=playdeck",
     "dev:playdeck": "turbo run dev --filter=playdeck",
+    "dev:firstly": "turbo run dev --filter=firstly",
     "build": "turbo run build --filter=playdeck",
+    "build:firstly": "turbo run build --filter=firstly",
     "start": "turbo run start --filter=playdeck",
+    "start:firstly": "turbo run start --filter=firstly",
     "lint": "turbo run lint --filter=playdeck",
+    "lint:firstly": "turbo run lint --filter=firstly",
     "test": "turbo run test --filter=playdeck",
+    "test:firstly": "turbo run test --filter=firstly",
     "test:watch": "turbo run test:watch --filter=playdeck",
+    "test:watch:firstly": "turbo run test:watch --filter=firstly",
     "format": "prettier --write \"apps/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\"",
-    "typecheck": "turbo run typecheck --filter=playdeck"
+    "typecheck": "turbo run typecheck --filter=playdeck",
+    "typecheck:firstly": "turbo run typecheck --filter=firstly"
   },
   "devDependencies": {
+    "@beyond/design-system": "workspace:*",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "turbo": "^2.8.20",

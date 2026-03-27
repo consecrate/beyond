@@ -1,8 +1,9 @@
 "use client"
 
 import Link from "next/link"
+
 import {
-  buttonVariants,
+  Button,
   Card,
   CardContent,
   CardDescription,
@@ -20,31 +21,25 @@ export default function Page() {
             "font-display text-[2.125rem] leading-none font-medium tracking-[-0.02em] text-foreground sm:text-4xl"
           )}
         >
-          PlayDeck
+          Firstly
         </h1>
         <p className="text-[0.9375rem] leading-relaxed text-muted-foreground">
-          Better Engagement. Better Learning. Now piloting at Elle.
+          From your first step to your true potential. Now piloting at Elle.
         </p>
       </header>
 
-      <div className="flex w-full max-w-xl flex-col gap-px overflow-hidden rounded-sm border border-border bg-border sm:flex-row sm:gap-0">
+      <div className="flex w-full max-w-2xl flex-col gap-px overflow-hidden rounded-sm border border-border bg-border sm:flex-row sm:gap-0">
         <Card className="w-full rounded-none border-0 sm:w-1/2">
           <CardHeader className="gap-1.5">
             <CardTitle className="font-sans text-[0.9375rem] font-semibold">
-              Host a session
+              What Firstly is
             </CardTitle>
             <CardDescription className="text-[0.8125rem] leading-snug">
-              Present and engage in real time.
+              A tool that turns rough goals, notes, and problem sets into a
+              clear path to mastery with skill graphs, prerequisite breakdowns, lessons, and
+              practice so you always know the next step.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Link
-              href="/presenter/sign-up"
-              className={cn(buttonVariants({ size: "lg" }), "w-full")}
-            >
-              Get started
-            </Link>
-          </CardContent>
         </Card>
 
         <div className="hidden w-px shrink-0 bg-border sm:block" aria-hidden />
@@ -52,22 +47,17 @@ export default function Page() {
         <Card className="w-full rounded-none border-0 sm:w-1/2">
           <CardHeader className="gap-1.5">
             <CardTitle className="font-sans text-[0.9375rem] font-semibold">
-              Join a session
+              Make the Leap
             </CardTitle>
             <CardDescription className="text-[0.8125rem] leading-snug">
-              Enter the code and jump in.
+              Create an account and start building structured progress toward what you want to
+              learn.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Link
-              href="/join"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "lg" }),
-                "w-full border-border bg-background"
-              )}
-            >
-              Join now
-            </Link>
+          <CardContent className="pt-0">
+            <Button nativeButton={false} render={<Link href="/sign-up" />}>
+              Sign up
+            </Button>
           </CardContent>
         </Card>
       </div>
