@@ -1,0 +1,3 @@
+@import "@beyond/design-system/styles.css";
+
+@source "../../**/*.{ts,tsx}";
