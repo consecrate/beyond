@@ -32,15 +32,18 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl
   const isAuthPage = pathname === "/sign-in" || pathname === "/sign-up"
-  const isLessonApp =
-    pathname === "/lessons" || pathname.startsWith("/lessons/")
+  const isAppWorkspace =
+    pathname === "/sessions" ||
+    pathname.startsWith("/sessions/") ||
+    pathname === "/lessons" ||
+    pathname.startsWith("/lessons/")
 
-  if (!user && isLessonApp) {
+  if (!user && isAppWorkspace) {
     return NextResponse.redirect(new URL("/sign-in", request.url))
   }
 
   if (user && isAuthPage) {
-    return NextResponse.redirect(new URL("/lessons", request.url))
+    return NextResponse.redirect(new URL("/sessions", request.url))
   }
 
   return supabaseResponse

@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react"
 
 import { signOut } from "@/features/auth/actions"
-import { cn } from "@beyond/design-system"
+import { Button, cn, SettingsGearIcon } from "@beyond/design-system"
 
 type Props = {
   displayName: string
@@ -11,7 +11,6 @@ type Props = {
 }
 
 export function AppUserMenu({ displayName, email }: Props) {
-  const initial = displayName.trim().charAt(0).toUpperCase() || "?"
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuPanelId = useId()
@@ -40,28 +39,23 @@ export function AppUserMenu({ displayName, email }: Props) {
 
   return (
     <div ref={menuRef} className="relative flex shrink-0 flex-col items-center">
-      <button
+      <Button
         type="button"
         id={`${menuPanelId}-trigger`}
+        variant="ghost"
+        size="icon-sm"
         aria-haspopup="true"
         aria-expanded={menuOpen}
         aria-controls={menuPanelId}
         onClick={() => setMenuOpen((o) => !o)}
         className={cn(
-          "flex cursor-pointer flex-col items-center gap-1 outline-none select-none",
-          "rounded-full focus-visible:ring-2 focus-visible:ring-ring"
+          "shrink-0 text-muted-foreground hover:text-foreground",
+          "focus-visible:ring-2 focus-visible:ring-ring",
         )}
+        aria-label="Account menu"
       >
-        <span
-          className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-full border border-border/60 bg-background text-[11px] font-semibold tracking-tight text-foreground"
-          )}
-          aria-hidden
-        >
-          {initial}
-        </span>
-        <span className="sr-only">Account menu</span>
-      </button>
+        <SettingsGearIcon className="size-5" aria-hidden />
+      </Button>
       {menuOpen ? (
         <div
           id={menuPanelId}

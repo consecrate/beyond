@@ -14,7 +14,7 @@ export default function SignInPage() {
             Welcome back
           </h1>
           <p className="text-sm text-muted-foreground">
-            Sign in to open your lessons.
+            Sign in to open your sessions and lessons.
           </p>
         </div>
         <SignInForm />

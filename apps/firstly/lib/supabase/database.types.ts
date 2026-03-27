@@ -7,6 +7,8 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
@@ -39,33 +41,40 @@ export type Database = {
     Tables: {
       lesson_edges: {
         Row: {
-          id: string
-          graph_id: string
-          lesson_id: string
-          from_node_id: string
-          to_node_id: string
-          edge_status: string
           created_at: string
+          edge_status: string
+          from_node_id: string
+          graph_id: string
+          id: string
+          lesson_id: string
+          to_node_id: string
         }
         Insert: {
-          id?: string
-          graph_id: string
-          lesson_id: string
-          from_node_id: string
-          to_node_id: string
-          edge_status?: string
           created_at?: string
+          edge_status?: string
+          from_node_id: string
+          graph_id: string
+          id?: string
+          lesson_id: string
+          to_node_id: string
         }
         Update: {
-          id?: string
-          graph_id?: string
-          lesson_id?: string
-          from_node_id?: string
-          to_node_id?: string
-          edge_status?: string
           created_at?: string
+          edge_status?: string
+          from_node_id?: string
+          graph_id?: string
+          id?: string
+          lesson_id?: string
+          to_node_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "lesson_edges_from_node_id_fkey"
+            columns: ["from_node_id"]
+            isOneToOne: false
+            referencedRelation: "lesson_nodes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "lesson_edges_graph_id_fkey"
             columns: ["graph_id"]
@@ -81,13 +90,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "lesson_edges_from_node_id_fkey"
-            columns: ["from_node_id"]
-            isOneToOne: false
-            referencedRelation: "lesson_nodes"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "lesson_edges_to_node_id_fkey"
             columns: ["to_node_id"]
             isOneToOne: false
@@ -98,31 +100,31 @@ export type Database = {
       }
       lesson_graphs: {
         Row: {
+          created_at: string
+          generation_reason: string
+          graph_metadata: Json
           id: string
           lesson_id: string
-          status: string
-          generation_reason: string
           source_summary: Json
-          graph_metadata: Json
-          created_at: string
+          status: string
         }
         Insert: {
+          created_at?: string
+          generation_reason: string
+          graph_metadata?: Json
           id?: string
           lesson_id: string
-          status?: string
-          generation_reason: string
           source_summary?: Json
-          graph_metadata?: Json
-          created_at?: string
+          status?: string
         }
         Update: {
+          created_at?: string
+          generation_reason?: string
+          graph_metadata?: Json
           id?: string
           lesson_id?: string
-          status?: string
-          generation_reason?: string
           source_summary?: Json
-          graph_metadata?: Json
-          created_at?: string
+          status?: string
         }
         Relationships: [
           {
@@ -136,25 +138,25 @@ export type Database = {
       }
       lesson_inputs: {
         Row: {
-          id: string
-          lesson_id: string
-          input_type: string
-          raw_text: string
           created_at: string
+          id: string
+          input_type: string
+          lesson_id: string
+          raw_text: string
         }
         Insert: {
-          id?: string
-          lesson_id: string
-          input_type: string
-          raw_text: string
           created_at?: string
+          id?: string
+          input_type: string
+          lesson_id: string
+          raw_text: string
         }
         Update: {
-          id?: string
-          lesson_id?: string
-          input_type?: string
-          raw_text?: string
           created_at?: string
+          id?: string
+          input_type?: string
+          lesson_id?: string
+          raw_text?: string
         }
         Relationships: [
           {
@@ -168,51 +170,51 @@ export type Database = {
       }
       lesson_nodes: {
         Row: {
-          id: string
-          graph_id: string
-          lesson_id: string
-          title: string
-          slug: string | null
-          summary: string | null
-          node_status: string
-          node_kind: string
           canonical_skill_candidate_key: string | null
+          created_at: string
+          display_order_hint: number | null
           domain_tags: string[]
           future_transfer_metadata: Json
-          display_order_hint: number | null
-          created_at: string
+          graph_id: string
+          id: string
+          lesson_id: string
+          node_kind: string
+          node_status: string
+          slug: string | null
+          summary: string | null
+          title: string
           updated_at: string
         }
         Insert: {
-          id?: string
-          graph_id: string
-          lesson_id: string
-          title: string
-          slug?: string | null
-          summary?: string | null
-          node_status?: string
-          node_kind?: string
           canonical_skill_candidate_key?: string | null
+          created_at?: string
+          display_order_hint?: number | null
           domain_tags?: string[]
           future_transfer_metadata?: Json
-          display_order_hint?: number | null
-          created_at?: string
+          graph_id: string
+          id?: string
+          lesson_id: string
+          node_kind?: string
+          node_status?: string
+          slug?: string | null
+          summary?: string | null
+          title: string
           updated_at?: string
         }
         Update: {
-          id?: string
-          graph_id?: string
-          lesson_id?: string
-          title?: string
-          slug?: string | null
-          summary?: string | null
-          node_status?: string
-          node_kind?: string
           canonical_skill_candidate_key?: string | null
+          created_at?: string
+          display_order_hint?: number | null
           domain_tags?: string[]
           future_transfer_metadata?: Json
-          display_order_hint?: number | null
-          created_at?: string
+          graph_id?: string
+          id?: string
+          lesson_id?: string
+          node_kind?: string
+          node_status?: string
+          slug?: string | null
+          summary?: string | null
+          title?: string
           updated_at?: string
         }
         Relationships: [
@@ -234,88 +236,92 @@ export type Database = {
       }
       lessons: {
         Row: {
-          id: string
-          user_id: string
-          title: string | null
-          status: string
+          created_at: string
           entry_mode: string
-          goal_text: string | null
-          subject_domain: string
           future_graph_mode: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          title?: string | null
-          status?: string
-          entry_mode: string
-          goal_text?: string | null
-          subject_domain?: string
-          future_graph_mode?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          title?: string | null
-          status?: string
-          entry_mode?: string
-          goal_text?: string | null
-          subject_domain?: string
-          future_graph_mode?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      node_lessons: {
-        Row: {
+          goal_text: string | null
           id: string
-          node_id: string
-          lesson_id: string
-          intro_markdown: string
-          worked_example_markdown: string
-          progression_markdown: string | null
-          content_status: string
-          generator_metadata: Json
-          created_at: string
+          session_id: string
+          status: string
+          subject_domain: string
+          title: string | null
           updated_at: string
+          user_id: string
         }
         Insert: {
-          id?: string
-          node_id: string
-          lesson_id: string
-          intro_markdown: string
-          worked_example_markdown: string
-          progression_markdown?: string | null
-          content_status?: string
-          generator_metadata?: Json
           created_at?: string
+          entry_mode: string
+          future_graph_mode?: string
+          goal_text?: string | null
+          id?: string
+          session_id: string
+          status?: string
+          subject_domain?: string
+          title?: string | null
           updated_at?: string
+          user_id: string
         }
         Update: {
-          id?: string
-          node_id?: string
-          lesson_id?: string
-          intro_markdown?: string
-          worked_example_markdown?: string
-          progression_markdown?: string | null
-          content_status?: string
-          generator_metadata?: Json
           created_at?: string
+          entry_mode?: string
+          future_graph_mode?: string
+          goal_text?: string | null
+          id?: string
+          session_id?: string
+          status?: string
+          subject_domain?: string
+          title?: string | null
           updated_at?: string
+          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "node_lessons_node_id_fkey"
-            columns: ["node_id"]
-            isOneToOne: true
-            referencedRelation: "lesson_nodes"
+            foreignKeyName: "lessons_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      node_lessons: {
+        Row: {
+          content_status: string
+          created_at: string
+          generator_metadata: Json
+          id: string
+          intro_markdown: string
+          lesson_id: string
+          node_id: string
+          progression_markdown: string | null
+          updated_at: string
+          worked_example_markdown: string
+        }
+        Insert: {
+          content_status?: string
+          created_at?: string
+          generator_metadata?: Json
+          id?: string
+          intro_markdown: string
+          lesson_id: string
+          node_id: string
+          progression_markdown?: string | null
+          updated_at?: string
+          worked_example_markdown: string
+        }
+        Update: {
+          content_status?: string
+          created_at?: string
+          generator_metadata?: Json
+          id?: string
+          intro_markdown?: string
+          lesson_id?: string
+          node_id?: string
+          progression_markdown?: string | null
+          updated_at?: string
+          worked_example_markdown?: string
+        }
+        Relationships: [
           {
             foreignKeyName: "node_lessons_lesson_id_fkey"
             columns: ["lesson_id"]
@@ -323,50 +329,50 @@ export type Database = {
             referencedRelation: "lessons"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      node_progress: {
-        Row: {
-          node_id: string
-          lesson_id: string
-          user_id: string
-          lesson_opened_at: string | null
-          first_completed_at: string | null
-          total_attempts: number
-          correct_attempts: number
-          mastery_state: string
-          updated_at: string
-        }
-        Insert: {
-          node_id: string
-          lesson_id: string
-          user_id: string
-          lesson_opened_at?: string | null
-          first_completed_at?: string | null
-          total_attempts?: number
-          correct_attempts?: number
-          mastery_state?: string
-          updated_at?: string
-        }
-        Update: {
-          node_id?: string
-          lesson_id?: string
-          user_id?: string
-          lesson_opened_at?: string | null
-          first_completed_at?: string | null
-          total_attempts?: number
-          correct_attempts?: number
-          mastery_state?: string
-          updated_at?: string
-        }
-        Relationships: [
           {
-            foreignKeyName: "node_progress_node_id_fkey"
+            foreignKeyName: "node_lessons_node_id_fkey"
             columns: ["node_id"]
             isOneToOne: true
             referencedRelation: "lesson_nodes"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      node_progress: {
+        Row: {
+          correct_attempts: number
+          first_completed_at: string | null
+          lesson_id: string
+          lesson_opened_at: string | null
+          mastery_state: string
+          node_id: string
+          total_attempts: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          correct_attempts?: number
+          first_completed_at?: string | null
+          lesson_id: string
+          lesson_opened_at?: string | null
+          mastery_state?: string
+          node_id: string
+          total_attempts?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          correct_attempts?: number
+          first_completed_at?: string | null
+          lesson_id?: string
+          lesson_opened_at?: string | null
+          mastery_state?: string
+          node_id?: string
+          total_attempts?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
           {
             foreignKeyName: "node_progress_lesson_id_fkey"
             columns: ["lesson_id"]
@@ -374,50 +380,50 @@ export type Database = {
             referencedRelation: "lessons"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "node_progress_node_id_fkey"
+            columns: ["node_id"]
+            isOneToOne: true
+            referencedRelation: "lesson_nodes"
+            referencedColumns: ["id"]
+          },
         ]
       }
       practice_attempts: {
         Row: {
           id: string
-          practice_problem_id: string
+          is_correct: boolean
           lesson_id: string
           node_id: string
-          user_id: string
+          practice_problem_id: string
           submitted_answer: Json
-          is_correct: boolean
-          time_spent_seconds: number | null
           submitted_at: string
+          time_spent_seconds: number | null
+          user_id: string
         }
         Insert: {
           id?: string
-          practice_problem_id: string
+          is_correct: boolean
           lesson_id: string
           node_id: string
-          user_id: string
+          practice_problem_id: string
           submitted_answer: Json
-          is_correct: boolean
-          time_spent_seconds?: number | null
           submitted_at?: string
+          time_spent_seconds?: number | null
+          user_id: string
         }
         Update: {
           id?: string
-          practice_problem_id?: string
+          is_correct?: boolean
           lesson_id?: string
           node_id?: string
-          user_id?: string
+          practice_problem_id?: string
           submitted_answer?: Json
-          is_correct?: boolean
-          time_spent_seconds?: number | null
           submitted_at?: string
+          time_spent_seconds?: number | null
+          user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "practice_attempts_practice_problem_id_fkey"
-            columns: ["practice_problem_id"]
-            isOneToOne: false
-            referencedRelation: "practice_problems"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "practice_attempts_lesson_id_fkey"
             columns: ["lesson_id"]
@@ -432,68 +438,75 @@ export type Database = {
             referencedRelation: "lesson_nodes"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "practice_attempts_practice_problem_id_fkey"
+            columns: ["practice_problem_id"]
+            isOneToOne: false
+            referencedRelation: "practice_problems"
+            referencedColumns: ["id"]
+          },
         ]
       }
       practice_problems: {
         Row: {
-          id: string
-          lesson_id: string
-          node_id: string
+          canonical_answer: Json | null
+          correct_option_index: number | null
+          created_at: string
+          difficulty: string | null
           family_key: string | null
           generation_round: number
-          prompt_markdown: string
-          problem_format: string
+          id: string
+          lesson_id: string
+          metadata: Json
+          node_id: string
           options: Json | null
-          correct_option_index: number | null
-          worked_solution_markdown: string
-          solver_language: string
+          problem_format: string
+          prompt_markdown: string
           solver_code: string | null
           solver_inputs: Json
+          solver_language: string
           solver_outputs: Json
-          canonical_answer: Json | null
-          difficulty: string | null
-          metadata: Json
-          created_at: string
+          worked_solution_markdown: string
         }
         Insert: {
+          canonical_answer?: Json | null
+          correct_option_index?: number | null
+          created_at?: string
+          difficulty?: string | null
+          family_key?: string | null
+          generation_round?: number
           id?: string
           lesson_id: string
+          metadata?: Json
           node_id: string
-          family_key?: string | null
-          generation_round?: number
-          prompt_markdown: string
-          problem_format: string
           options?: Json | null
-          correct_option_index?: number | null
-          worked_solution_markdown: string
-          solver_language?: string
+          problem_format: string
+          prompt_markdown: string
           solver_code?: string | null
           solver_inputs?: Json
+          solver_language?: string
           solver_outputs?: Json
-          canonical_answer?: Json | null
-          difficulty?: string | null
-          metadata?: Json
-          created_at?: string
+          worked_solution_markdown: string
         }
         Update: {
-          id?: string
-          lesson_id?: string
-          node_id?: string
+          canonical_answer?: Json | null
+          correct_option_index?: number | null
+          created_at?: string
+          difficulty?: string | null
           family_key?: string | null
           generation_round?: number
-          prompt_markdown?: string
-          problem_format?: string
+          id?: string
+          lesson_id?: string
+          metadata?: Json
+          node_id?: string
           options?: Json | null
-          correct_option_index?: number | null
-          worked_solution_markdown?: string
-          solver_language?: string
+          problem_format?: string
+          prompt_markdown?: string
           solver_code?: string | null
           solver_inputs?: Json
+          solver_language?: string
           solver_outputs?: Json
-          canonical_answer?: Json | null
-          difficulty?: string | null
-          metadata?: Json
-          created_at?: string
+          worked_solution_markdown?: string
         }
         Relationships: [
           {
@@ -514,34 +527,34 @@ export type Database = {
       }
       problem_node_links: {
         Row: {
+          confidence: number | null
+          created_at: string
           id: string
           lesson_id: string
-          source_problem_id: string
-          node_id: string
           link_role: string
+          node_id: string
           rationale: string | null
-          confidence: string | null
-          created_at: string
+          source_problem_id: string
         }
         Insert: {
+          confidence?: number | null
+          created_at?: string
           id?: string
           lesson_id: string
-          source_problem_id: string
-          node_id: string
           link_role?: string
+          node_id: string
           rationale?: string | null
-          confidence?: string | null
-          created_at?: string
+          source_problem_id: string
         }
         Update: {
+          confidence?: number | null
+          created_at?: string
           id?: string
           lesson_id?: string
-          source_problem_id?: string
-          node_id?: string
           link_role?: string
+          node_id?: string
           rationale?: string | null
-          confidence?: string | null
-          created_at?: string
+          source_problem_id?: string
         }
         Relationships: [
           {
@@ -552,56 +565,161 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "problem_node_links_source_problem_id_fkey"
-            columns: ["source_problem_id"]
-            isOneToOne: false
-            referencedRelation: "source_problems"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "problem_node_links_node_id_fkey"
             columns: ["node_id"]
             isOneToOne: false
             referencedRelation: "lesson_nodes"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "problem_node_links_source_problem_id_fkey"
+            columns: ["source_problem_id"]
+            isOneToOne: false
+            referencedRelation: "source_problems"
+            referencedColumns: ["id"]
+          },
         ]
       }
-      source_documents: {
+      session_graph_edges: {
         Row: {
-          id: string
-          lesson_id: string
-          storage_path: string | null
-          mime_type: string | null
-          file_name: string | null
-          extraction_status: string
-          extracted_text: string | null
-          extraction_metadata: Json
           created_at: string
+          from_lesson_id: string
+          graph_id: string
+          id: string
+          to_lesson_id: string
+        }
+        Insert: {
+          created_at?: string
+          from_lesson_id: string
+          graph_id: string
+          id?: string
+          to_lesson_id: string
+        }
+        Update: {
+          created_at?: string
+          from_lesson_id?: string
+          graph_id?: string
+          id?: string
+          to_lesson_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_graph_edges_from_lesson_id_fkey"
+            columns: ["from_lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_graph_edges_graph_id_fkey"
+            columns: ["graph_id"]
+            isOneToOne: false
+            referencedRelation: "session_graphs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_graph_edges_to_lesson_id_fkey"
+            columns: ["to_lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_graphs: {
+        Row: {
+          created_at: string
+          graph_metadata: Json
+          id: string
+          session_id: string
           updated_at: string
         }
         Insert: {
-          id?: string
-          lesson_id: string
-          storage_path?: string | null
-          mime_type?: string | null
-          file_name?: string | null
-          extraction_status?: string
-          extracted_text?: string | null
-          extraction_metadata?: Json
           created_at?: string
+          graph_metadata?: Json
+          id?: string
+          session_id: string
           updated_at?: string
         }
         Update: {
+          created_at?: string
+          graph_metadata?: Json
           id?: string
-          lesson_id?: string
-          storage_path?: string | null
-          mime_type?: string | null
-          file_name?: string | null
-          extraction_status?: string
+          session_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_graphs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          created_at: string
+          id: string
+          status: string
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          status?: string
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          status?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      source_documents: {
+        Row: {
+          created_at: string
+          extracted_text: string | null
+          extraction_metadata: Json
+          extraction_status: string
+          file_name: string | null
+          id: string
+          lesson_id: string
+          mime_type: string | null
+          storage_path: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
           extracted_text?: string | null
           extraction_metadata?: Json
+          extraction_status?: string
+          file_name?: string | null
+          id?: string
+          lesson_id: string
+          mime_type?: string | null
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Update: {
           created_at?: string
+          extracted_text?: string | null
+          extraction_metadata?: Json
+          extraction_status?: string
+          file_name?: string | null
+          id?: string
+          lesson_id?: string
+          mime_type?: string | null
+          storage_path?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -616,66 +734,66 @@ export type Database = {
       }
       source_problems: {
         Row: {
-          id: string
-          source_document_id: string
-          lesson_id: string
-          problem_index: number
-          problem_label: string | null
-          original_text: string | null
-          normalized_text: string | null
-          page_number: number | null
           bbox: Json | null
+          created_at: string
           crop_storage_path: string | null
           decomposition_status: string
+          id: string
           learner_status: string
-          created_at: string
+          lesson_id: string
+          normalized_text: string | null
+          original_text: string | null
+          page_number: number | null
+          problem_index: number
+          problem_label: string | null
+          source_document_id: string
           updated_at: string
         }
         Insert: {
-          id?: string
-          source_document_id: string
-          lesson_id: string
-          problem_index: number
-          problem_label?: string | null
-          original_text?: string | null
-          normalized_text?: string | null
-          page_number?: number | null
           bbox?: Json | null
+          created_at?: string
           crop_storage_path?: string | null
           decomposition_status?: string
+          id?: string
           learner_status?: string
-          created_at?: string
+          lesson_id: string
+          normalized_text?: string | null
+          original_text?: string | null
+          page_number?: number | null
+          problem_index: number
+          problem_label?: string | null
+          source_document_id: string
           updated_at?: string
         }
         Update: {
-          id?: string
-          source_document_id?: string
-          lesson_id?: string
-          problem_index?: number
-          problem_label?: string | null
-          original_text?: string | null
-          normalized_text?: string | null
-          page_number?: number | null
           bbox?: Json | null
+          created_at?: string
           crop_storage_path?: string | null
           decomposition_status?: string
+          id?: string
           learner_status?: string
-          created_at?: string
+          lesson_id?: string
+          normalized_text?: string | null
+          original_text?: string | null
+          page_number?: number | null
+          problem_index?: number
+          problem_label?: string | null
+          source_document_id?: string
           updated_at?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "source_problems_source_document_id_fkey"
-            columns: ["source_document_id"]
-            isOneToOne: false
-            referencedRelation: "source_documents"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "source_problems_lesson_id_fkey"
             columns: ["lesson_id"]
             isOneToOne: false
             referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "source_problems_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "source_documents"
             referencedColumns: ["id"]
           },
         ]

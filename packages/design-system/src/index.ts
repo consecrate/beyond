@@ -1,7 +1,8 @@
 export { cn } from "./lib/utils"
+export { SettingsGearIcon } from "./icons/settings-gear-icon"
 export { ThemeProvider } from "./theme-provider"
-export type { ButtonVariants } from "./components/ui/button-variants"
-export { Button, buttonVariants } from "./components/ui/button"
+export { buttonVariants, type ButtonVariants } from "./components/ui/button-variants"
+export { Button } from "./components/ui/button"
 export {
   Card,
   CardHeader,

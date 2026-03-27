@@ -36,8 +36,8 @@ export default function Page() {
             </CardTitle>
             <CardDescription className="text-[0.8125rem] leading-snug">
               A tool that turns rough goals, notes, and problem sets into a
-              clear path to mastery with skill graphs, prerequisite breakdowns, lessons, and
-              practice so you always know the next step.
+              clear path to mastery with skill graphs, prerequisite breakdowns, session-based
+              lessons, and practice so you always know the next step.
             </CardDescription>
           </CardHeader>
         </Card>

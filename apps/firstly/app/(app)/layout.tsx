@@ -16,7 +16,7 @@ export default async function AppLayout({
 
   return (
     <div className="min-h-svh bg-background">
-      <main className="min-h-svh overflow-auto px-5 py-6 md:px-8 md:py-8">
+      <main className="min-h-svh overflow-auto px-5 pb-0 md:px-8">
         {children}
       </main>
     </div>

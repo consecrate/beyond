@@ -27,6 +27,51 @@ export async function getLessonsForUser(options?: {
   return data
 }
 
+/** Oldest lesson in the session, if any (matches `updateSession` root-lesson behavior). */
+export async function getRootLessonForSession(
+  sessionId: string,
+): Promise<LessonRow | null> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return null
+
+  const { data, error } = await supabase
+    .from("lessons")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
+export async function getLessonsForSession(
+  sessionId: string,
+): Promise<LessonRow[]> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return []
+
+  const { data, error } = await supabase
+    .from("lessons")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("user_id", user.id)
+    .order("updated_at", { ascending: false })
+
+  if (error) throw error
+  return data
+}
+
 export async function getLesson(lessonId: string): Promise<LessonRow | null> {
   const supabase = await createClient()
 

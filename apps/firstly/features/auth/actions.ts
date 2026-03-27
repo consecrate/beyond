@@ -22,7 +22,7 @@ export async function signUp(
   if (!result.signedIn) return { info: result.message }
 
   revalidatePath("/", "layout")
-  redirect("/lessons")
+  redirect("/sessions")
 }
 
 export async function signIn(
@@ -37,7 +37,7 @@ export async function signIn(
   if (!result.ok) return { error: result.error }
 
   revalidatePath("/", "layout")
-  redirect("/lessons")
+  redirect("/sessions")
 }
 
 export async function signOut(): Promise<void> {
