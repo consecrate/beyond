@@ -180,9 +180,62 @@ export async function updateLesson(
   const goalTextRaw = (formData.get("goalText") as string)?.trim()
   const goal_text = goalTextRaw ? goalTextRaw : null
 
+  const updatePayload: {
+    title: string | null
+    goal_text: string | null
+    lesson_markdown?: string | null
+  } = { title, goal_text }
+
+  const lessonMarkdownRaw = formData.get("lessonMarkdown")
+  if (lessonMarkdownRaw !== null) {
+    if (typeof lessonMarkdownRaw !== "string") {
+      return { error: "Invalid lesson markdown field." }
+    }
+    const trimmed = lessonMarkdownRaw.trim()
+    updatePayload.lesson_markdown = trimmed === "" ? null : lessonMarkdownRaw
+  }
+
   const { error } = await supabase
     .from("lessons")
-    .update({ title, goal_text })
+    .update(updatePayload)
+    .eq("id", lessonId)
+
+  if (error) return { error: error.message }
+
+  if (sessionId) {
+    revalidateLessonScope(sessionId, lessonId)
+  } else {
+    const { data: row } = await supabase
+      .from("lessons")
+      .select("session_id")
+      .eq("id", lessonId)
+      .maybeSingle()
+    if (row?.session_id) {
+      revalidateLessonScope(row.session_id, lessonId)
+    }
+  }
+
+  return {}
+}
+
+export async function saveLessonMarkdown(
+  _prev: LessonActionState,
+  formData: FormData,
+): Promise<LessonActionState> {
+  const supabase = await createClient()
+
+  const lessonId = (formData.get("lessonId") as string)?.trim()
+  const sessionId = (formData.get("sessionId") as string)?.trim()
+  const raw = (formData.get("lessonMarkdown") as string) ?? ""
+
+  if (!lessonId) return { error: "Missing lesson." }
+
+  const trimmed = raw.trim()
+  const lesson_markdown = trimmed === "" ? null : raw
+
+  const { error } = await supabase
+    .from("lessons")
+    .update({ lesson_markdown })
     .eq("id", lessonId)
 
   if (error) return { error: error.message }

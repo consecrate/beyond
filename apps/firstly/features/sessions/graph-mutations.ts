@@ -10,7 +10,7 @@ function revalidateSessionScope(sessionId: string) {
 }
 
 /** Directed graph has a cycle (DFS). */
-function graphHasCycle(
+export function graphHasCycle(
   edges: { from_lesson_id: string; to_lesson_id: string }[],
   nodeIds: Set<string>,
 ): boolean {

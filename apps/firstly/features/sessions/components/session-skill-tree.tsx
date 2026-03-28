@@ -1,8 +1,8 @@
 "use client"
 
-import { memo, useCallback, useEffect, useMemo } from "react"
-import { useRouter } from "next/navigation"
+import { memo, useCallback, useEffect, useMemo, useRef } from "react"
 import {
+  applyEdgeChanges,
   Background,
   Controls,
   Handle,
@@ -13,9 +13,11 @@ import {
   useEdgesState,
   useNodesState,
   type Edge,
+  type EdgeTypes,
   type Node,
   type NodeProps,
   type NodeTypes,
+  type OnEdgesChange,
 } from "@xyflow/react"
 
 import "@xyflow/react/dist/style.css"
@@ -25,11 +27,14 @@ import { cn } from "@beyond/design-system"
 import type { LessonRow } from "@/features/lessons/queries"
 import { transitiveReduction } from "@/features/sessions/graph-transitive-reduction"
 import type { SessionSkillGraphPayload } from "@/features/sessions/queries"
+import { layoutSkillTreeWithElk } from "@/features/sessions/skill-tree-elk-layout"
+import { SkillTreeBezierEdge } from "@/features/sessions/session-skill-tree-edge"
 
 type Props = {
-  sessionId: string
   lessons: LessonRow[]
   skillGraph: SessionSkillGraphPayload | null
+  selectedLessonId?: string | null
+  onLessonSelect?: (lessonId: string) => void
   className?: string
 }
 
@@ -37,39 +42,74 @@ type SessionSkillTreeFlowProps = Omit<Props, "skillGraph"> & {
   skillGraph: SessionSkillGraphPayload
 }
 
-/** Horizontal distance between prerequisite layers (left → right). */
-const LAYER_GAP_X = 260
-/** Vertical spacing between nodes that share a layer. */
-const LAYER_GAP_Y = 120
+/** Fixed node width for manual fallback + ELK; keep in sync with card CSS below. */
+const SKILL_NODE_WIDTH_PX = 200
+/** Approximate rendered height (line-clamp-3 + padding) for ELK. */
+const SKILL_NODE_HEIGHT_PX = 72
+/** Vertical distance between prerequisite ranks (foundational bottom → advanced top). */
+const VERTICAL_RANK_GAP = 200
+/** Left-edge to left-edge spacing (≥ SKILL_NODE_WIDTH_PX + visual gap). */
+const HORIZONTAL_SIBLING_GAP = 220
 
 type SkillLessonNodeData = {
   label: string
-  showSource: boolean
-  showTarget: boolean
+  /** Number of outgoing edges (single top-center source handle when > 0). */
+  outgoingCount: number
+  /** Number of incoming edges (bottom target handles, spread). */
+  incomingCount: number
+  selected?: boolean
 }
 
 type SkillLessonNode = Node<SkillLessonNodeData, "skillLesson">
 
+const handleSpreadStyle = (index: number, count: number) => ({
+  left: `${((index + 1) / (count + 1)) * 100}%`,
+  transform: "translateX(-50%)",
+})
+
+const sourceHandleCenterStyle = {
+  left: "50%",
+  transform: "translateX(-50%)",
+} as const
+
 const SkillLessonNodeView = memo(function SkillLessonNodeView({
   data,
 }: NodeProps<SkillLessonNode>) {
+  const { outgoingCount, incomingCount } = data
   return (
-    <div className="min-w-[140px] rounded-sm border border-border bg-card px-3 py-2 text-center text-sm shadow-sm">
-      {data.showTarget ? (
+    <div
+      className={cn(
+        "rounded-sm border bg-card px-3 py-2 text-center text-sm shadow-sm",
+        data.selected
+          ? "border-primary ring-2 ring-primary/35"
+          : "border-border",
+      )}
+      style={{ width: SKILL_NODE_WIDTH_PX, maxWidth: SKILL_NODE_WIDTH_PX }}
+    >
+      {incomingCount > 0
+        ? Array.from({ length: incomingCount }, (_, i) => (
+            <Handle
+              key={`t-${i}`}
+              id={`t-${i}`}
+              type="target"
+              position={Position.Bottom}
+              isConnectable={false}
+              className="pointer-events-none opacity-0"
+              style={handleSpreadStyle(i, incomingCount)}
+            />
+          ))
+        : null}
+      <span className="line-clamp-3 text-foreground" title={data.label}>
+        {data.label}
+      </span>
+      {outgoingCount > 0 ? (
         <Handle
-          type="target"
-          position={Position.Left}
-          isConnectable={false}
-          className="pointer-events-none opacity-0"
-        />
-      ) : null}
-      <span className="text-foreground">{data.label}</span>
-      {data.showSource ? (
-        <Handle
+          id="s-0"
           type="source"
-          position={Position.Right}
+          position={Position.Top}
           isConnectable={false}
           className="pointer-events-none opacity-0"
+          style={sourceHandleCenterStyle}
         />
       ) : null}
     </div>
@@ -80,25 +120,56 @@ const SKILL_LESSON_NODE_TYPES = {
   skillLesson: SkillLessonNodeView,
 } satisfies NodeTypes
 
-function lessonEdgeConnectivity(
-  edgeRows: { from_lesson_id: string; to_lesson_id: string }[],
-  lessonIds: Set<string>,
-): { hasOutgoing: Set<string>; hasIncoming: Set<string> } {
-  const hasOutgoing = new Set<string>()
-  const hasIncoming = new Set<string>()
-  for (const e of edgeRows) {
-    if (!lessonIds.has(e.from_lesson_id) || !lessonIds.has(e.to_lesson_id)) {
-      continue
-    }
-    hasOutgoing.add(e.from_lesson_id)
-    hasIncoming.add(e.to_lesson_id)
-  }
-  return { hasOutgoing, hasIncoming }
-}
+const SKILL_TREE_EDGE_TYPES = {
+  skillBezier: SkillTreeBezierEdge,
+} satisfies EdgeTypes
 
 type LessonEdge = { from_lesson_id: string; to_lesson_id: string }
 
-/** Longest-path layer: prerequisites left, dependents right (DAG). */
+function edgeKey(e: LessonEdge): string {
+  return `${e.from_lesson_id}-${e.to_lesson_id}`
+}
+
+/** Stable per-edge target indices so multiple incoming edges spread along the bottom. */
+function buildTargetHandleIndicesByEdge(minimal: LessonEdge[]): {
+  targetIndexByEdge: Map<string, number>
+  outgoingByLesson: Map<string, number>
+  incomingByLesson: Map<string, number>
+} {
+  const outgoingByLesson = new Map<string, number>()
+  const incomingByLesson = new Map<string, number>()
+  for (const e of minimal) {
+    outgoingByLesson.set(
+      e.from_lesson_id,
+      (outgoingByLesson.get(e.from_lesson_id) ?? 0) + 1,
+    )
+    incomingByLesson.set(
+      e.to_lesson_id,
+      (incomingByLesson.get(e.to_lesson_id) ?? 0) + 1,
+    )
+  }
+
+  const byTgt = new Map<string, LessonEdge[]>()
+  for (const e of minimal) {
+    if (!byTgt.has(e.to_lesson_id)) byTgt.set(e.to_lesson_id, [])
+    byTgt.get(e.to_lesson_id)!.push(e)
+  }
+
+  const targetIndexByEdge = new Map<string, number>()
+
+  for (const arr of byTgt.values()) {
+    arr.sort((a, b) => a.from_lesson_id.localeCompare(b.from_lesson_id))
+    arr.forEach((e, i) => targetIndexByEdge.set(edgeKey(e), i))
+  }
+
+  return {
+    targetIndexByEdge,
+    outgoingByLesson,
+    incomingByLesson,
+  }
+}
+
+/** Longest-path layer: higher L = farther along the DAG; layout maps L to vertical rank (bottom → top). */
 function computeLessonLayers(
   lessonIds: readonly string[],
   edges: LessonEdge[],
@@ -189,8 +260,8 @@ function buildFlowState(
     to_lesson_id: e.to,
   }))
 
-  const lessonIds = new Set(sorted.map((l) => l.id))
-  const { hasOutgoing, hasIncoming } = lessonEdgeConnectivity(minimal, lessonIds)
+  const { targetIndexByEdge, outgoingByLesson, incomingByLesson } =
+    buildTargetHandleIndicesByEdge(minimal)
 
   const layer = computeLessonLayers(allIds, minimal)
   const byLayer = new Map<number, LessonRow[]>()
@@ -200,50 +271,90 @@ function buildFlowState(
     byLayer.get(L)!.push(lesson)
   }
 
-  let maxCol = 1
+  let maxSiblings = 1
   for (const col of byLayer.values()) {
-    maxCol = Math.max(maxCol, col.length)
+    maxSiblings = Math.max(maxSiblings, col.length)
+  }
+
+  let maxLayer = 0
+  for (const L of layer.values()) {
+    maxLayer = Math.max(maxLayer, L)
   }
 
   const nodes: SkillLessonNode[] = []
   for (const [L, lessonsInLayer] of [...byLayer.entries()].sort(
     (a, b) => a[0] - b[0],
   )) {
-    const y0 =
-      ((maxCol - lessonsInLayer.length) * LAYER_GAP_Y) / 2
+    const x0 =
+      ((maxSiblings - lessonsInLayer.length) * HORIZONTAL_SIBLING_GAP) / 2
+    const y = (maxLayer - L) * VERTICAL_RANK_GAP
     lessonsInLayer.forEach((lesson, j) => {
       nodes.push({
         id: lesson.id,
         type: "skillLesson",
-        position: { x: L * LAYER_GAP_X, y: y0 + j * LAYER_GAP_Y },
+        position: { x: x0 + j * HORIZONTAL_SIBLING_GAP, y },
         data: {
           label: lesson.title?.trim() || "Untitled lesson",
-          showSource: hasOutgoing.has(lesson.id),
-          showTarget: hasIncoming.has(lesson.id),
+          outgoingCount: outgoingByLesson.get(lesson.id) ?? 0,
+          incomingCount: incomingByLesson.get(lesson.id) ?? 0,
         },
       })
     })
   }
 
-  const edges: Edge[] = minimal.map((e) => ({
-    id: `e-${e.from_lesson_id}-${e.to_lesson_id}`,
-    type: "smoothstep",
-    source: e.from_lesson_id,
-    target: e.to_lesson_id,
-    animated: false,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
-  }))
+  const edges: Edge[] = minimal.map((e) => {
+    const k = edgeKey(e)
+    return {
+      id: `e-${e.from_lesson_id}-${e.to_lesson_id}`,
+      type: "skillBezier",
+      source: e.from_lesson_id,
+      target: e.to_lesson_id,
+      sourceHandle: "s-0",
+      targetHandle: `t-${targetIndexByEdge.get(k) ?? 0}`,
+      animated: false,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+    }
+  })
 
   return { nodes, edges, viewport }
 }
 
+/** Marker defs use `marker.color` (see @xyflow/system createMarkerIds), not path inline style. */
+const SKILL_EDGE_MARKER_STROKE = "var(--foreground)" as const
+
+function syncSkillBezierMarkerEnd(edge: Edge): Edge {
+  if (edge.type !== "skillBezier") return edge
+  const m = edge.markerEnd
+  if (typeof m !== "object" || m === null) return edge
+  if (edge.selected) {
+    return { ...edge, markerEnd: { ...m, color: SKILL_EDGE_MARKER_STROKE } }
+  }
+  const withoutColor = { ...m } as { color?: string } & typeof m
+  delete withoutColor.color
+  return { ...edge, markerEnd: withoutColor }
+}
+
+function mergeNodeSelection(
+  list: SkillLessonNode[],
+  selectedId: string | null | undefined,
+): SkillLessonNode[] {
+  return list.map((n) => ({
+    ...n,
+    data: { ...n.data, selected: n.id === selectedId },
+  }))
+}
+
 function SessionSkillTreeFlow({
-  sessionId,
   lessons,
   skillGraph,
+  selectedLessonId,
+  onLessonSelect,
   className,
 }: SessionSkillTreeFlowProps) {
-  const router = useRouter()
+  const selectedRef = useRef(selectedLessonId)
+  useEffect(() => {
+    selectedRef.current = selectedLessonId
+  }, [selectedLessonId])
 
   const prepared = useMemo(
     () => buildFlowState(lessons, skillGraph),
@@ -253,18 +364,45 @@ function SessionSkillTreeFlow({
   const [nodes, setNodes, onNodesChange] = useNodesState<SkillLessonNode>(
     prepared.nodes,
   )
-  const [edges, setEdges, onEdgesChange] = useEdgesState(prepared.edges)
+  const [edges, setEdges] = useEdgesState(prepared.edges)
+
+  const onEdgesChange = useCallback<OnEdgesChange>(
+    (changes) => {
+      setEdges((eds) =>
+        applyEdgeChanges(changes, eds).map(syncSkillBezierMarkerEnd),
+      )
+    },
+    [setEdges],
+  )
 
   useEffect(() => {
-    setNodes(prepared.nodes)
     setEdges(prepared.edges)
+    setNodes(mergeNodeSelection(prepared.nodes, selectedRef.current))
+
+    let cancelled = false
+    void layoutSkillTreeWithElk(
+      prepared.nodes,
+      prepared.edges,
+      SKILL_NODE_WIDTH_PX,
+      SKILL_NODE_HEIGHT_PX,
+    ).then((next) => {
+      if (!cancelled)
+        setNodes(mergeNodeSelection(next, selectedRef.current))
+    })
+    return () => {
+      cancelled = true
+    }
   }, [prepared.nodes, prepared.edges, setNodes, setEdges])
+
+  useEffect(() => {
+    setNodes((nds) => mergeNodeSelection(nds, selectedLessonId))
+  }, [selectedLessonId, setNodes])
 
   const onNodeClick = useCallback(
     (_: unknown, node: SkillLessonNode) => {
-      router.push(`/sessions/${sessionId}/lessons/${node.id}`)
+      onLessonSelect?.(node.id)
     },
-    [router, sessionId],
+    [onLessonSelect],
   )
 
   return (
@@ -272,6 +410,14 @@ function SessionSkillTreeFlow({
       <ReactFlow<SkillLessonNode>
         key={skillGraph.graphId}
         nodeTypes={SKILL_LESSON_NODE_TYPES}
+        edgeTypes={SKILL_TREE_EDGE_TYPES}
+        defaultEdgeOptions={{
+          style: {
+            strokeWidth: 2,
+            stroke: "var(--foreground)",
+            strokeOpacity: 0.45,
+          },
+        }}
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
@@ -330,9 +476,10 @@ export function SessionSkillTree(props: Props) {
   return (
     <ReactFlowProvider>
       <SessionSkillTreeFlow
-        sessionId={props.sessionId}
         lessons={props.lessons}
         skillGraph={skillGraph}
+        selectedLessonId={props.selectedLessonId}
+        onLessonSelect={props.onLessonSelect}
         className={props.className}
       />
     </ReactFlowProvider>

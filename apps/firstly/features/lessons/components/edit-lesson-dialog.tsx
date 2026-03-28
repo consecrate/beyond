@@ -21,6 +21,7 @@ type Props = {
     session_id: string
     title: string | null
     goal_text: string | null
+    lesson_markdown: string | null
   }
 }
 

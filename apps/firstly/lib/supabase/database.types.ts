@@ -241,8 +241,10 @@ export type Database = {
           future_graph_mode: string
           goal_text: string | null
           id: string
+          lesson_markdown: string | null
           session_id: string
           status: string
+          structured_lesson_json: Json | null
           subject_domain: string
           title: string | null
           updated_at: string
@@ -254,8 +256,10 @@ export type Database = {
           future_graph_mode?: string
           goal_text?: string | null
           id?: string
+          lesson_markdown?: string | null
           session_id: string
           status?: string
+          structured_lesson_json?: Json | null
           subject_domain?: string
           title?: string | null
           updated_at?: string
@@ -267,8 +271,10 @@ export type Database = {
           future_graph_mode?: string
           goal_text?: string | null
           id?: string
+          lesson_markdown?: string | null
           session_id?: string
           status?: string
+          structured_lesson_json?: Json | null
           subject_domain?: string
           title?: string | null
           updated_at?: string

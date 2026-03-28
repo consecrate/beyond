@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 
 import { updateLesson, type LessonActionState } from "@/features/lessons/actions"
 import { Button, Input, Textarea } from "@beyond/design-system"
@@ -11,6 +12,7 @@ type Props = {
     session_id: string
     title: string | null
     goal_text: string | null
+    lesson_markdown: string | null
   }
   appearance?: "page" | "dialog"
   onSaved?: () => void
@@ -23,6 +25,7 @@ export function LessonMetadataForm({
   appearance = "page",
   onSaved,
 }: Props) {
+  const router = useRouter()
   const [state, action, pending] = useActionState(updateLesson, initialState)
   const wasPending = useRef(false)
 
@@ -33,8 +36,11 @@ export function LessonMetadataForm({
     }
     if (!wasPending.current) return
     wasPending.current = false
-    if (!state.error) onSaved?.()
-  }, [pending, state.error, onSaved])
+    if (!state.error) {
+      router.refresh()
+      onSaved?.()
+    }
+  }, [pending, state.error, onSaved, router])
 
   const isDialog = appearance === "dialog"
 
@@ -72,6 +78,28 @@ export function LessonMetadataForm({
           defaultValue={lesson.goal_text ?? ""}
           rows={isDialog ? 2 : 3}
         />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="lessonMarkdown" className="text-sm font-medium">
+          Lesson Markdown{" "}
+          <span className="text-muted-foreground">(optional)</span>
+        </label>
+        <Textarea
+          id="lessonMarkdown"
+          name="lessonMarkdown"
+          defaultValue={lesson.lesson_markdown ?? ""}
+          rows={isDialog ? 10 : 8}
+          className={
+            isDialog
+              ? "field-sizing-fixed max-h-[min(50vh,20rem)] min-h-[200px] resize-y overflow-y-auto font-mono text-xs leading-relaxed"
+              : "field-sizing-fixed max-h-[min(60vh,24rem)] min-h-48 resize-y overflow-y-auto font-mono text-xs leading-relaxed"
+          }
+          placeholder="Paste or edit the Markdown lesson from your custom GPT ($...$ and $$...$$ for math)."
+        />
+        <p className="text-xs text-muted-foreground">
+          Leave empty to clear stored lesson content.
+        </p>
       </div>
 
       <Button
