@@ -1,6 +1,4 @@
-// TODO: Monaco editor adapter
-// This module will wrap Monaco editor initialization and
-// integration with Judge0 CE for code execution.
+// TODO: Monaco (or other) code editor adapter — initialization and lifecycle.
 
 export function initEditor() {
   throw new Error("Monaco editor adapter not configured yet")

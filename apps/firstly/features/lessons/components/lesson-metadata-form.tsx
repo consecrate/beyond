@@ -1,9 +1,13 @@
 "use client"
 
-import { useActionState, useEffect, useRef } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useTransition, type FormEvent } from "react"
 
-import { updateLesson, type LessonActionState } from "@/features/lessons/actions"
+import { assertLoaded } from "jazz-tools"
+import { useAccount } from "jazz-tools/react"
+
+import { firstlyAccountResolve } from "@/features/firstly/account-resolve"
+import { updateLessonFields } from "@/features/firstly/jazz-firstly-mutations"
+import { FirstlyAccount } from "@/features/jazz/schema"
 import { Button, Input, Textarea } from "@beyond/design-system"
 
 type Props = {
@@ -18,40 +22,52 @@ type Props = {
   onSaved?: () => void
 }
 
-const initialState: LessonActionState = {}
-
 export function LessonMetadataForm({
   lesson,
   appearance = "page",
   onSaved,
 }: Props) {
-  const router = useRouter()
-  const [state, action, pending] = useActionState(updateLesson, initialState)
-  const wasPending = useRef(false)
-
-  useEffect(() => {
-    if (pending) {
-      wasPending.current = true
-      return
-    }
-    if (!wasPending.current) return
-    wasPending.current = false
-    if (!state.error) {
-      router.refresh()
-      onSaved?.()
-    }
-  }, [pending, state.error, onSaved, router])
+  const me = useAccount(FirstlyAccount, { resolve: firstlyAccountResolve })
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
 
   const isDialog = appearance === "dialog"
 
   return (
-    <form action={action} className="flex flex-col gap-4">
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault()
+        setError(null)
+        const fd = new FormData(e.currentTarget)
+        startTransition(() => {
+          assertLoaded(me)
+          const title = (fd.get("title") as string)?.trim() || null
+          const goalRaw = (fd.get("goalText") as string)?.trim()
+          const goal_text = goalRaw ? goalRaw : null
+          const lessonMarkdownRaw = fd.get("lessonMarkdown")
+          const r = updateLessonFields(me, lesson.id, {
+            title,
+            goal_text,
+            lesson_markdown:
+              lessonMarkdownRaw !== null && typeof lessonMarkdownRaw === "string"
+                ? lessonMarkdownRaw
+                : undefined,
+          })
+          if (!r.ok) {
+            setError(r.error)
+            return
+          }
+          onSaved?.()
+        })
+      }}
+    >
       <input type="hidden" name="lessonId" value={lesson.id} />
       <input type="hidden" name="sessionId" value={lesson.session_id} />
 
-      {state.error && (
+      {error && (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {error}
         </p>
       )}
 
@@ -104,7 +120,7 @@ export function LessonMetadataForm({
 
       <Button
         type="submit"
-        disabled={pending}
+        disabled={pending || !me.$isLoaded}
         {...(isDialog
           ? {}
           : { size: "sm" as const, className: "self-end" })}

@@ -1,9 +1,14 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useMemo, useState, useTransition, type FormEvent } from "react"
 
-import { saveLessonMarkdown, type LessonActionState } from "@/features/lessons/actions"
+import { assertLoaded } from "jazz-tools"
+import { useAccount } from "jazz-tools/react"
+
+import type { LessonRow } from "@/features/firstly/data-types"
+import { firstlyAccountResolve } from "@/features/firstly/account-resolve"
+import { updateLessonFields } from "@/features/firstly/jazz-firstly-mutations"
+import { FirstlyAccount } from "@/features/jazz/schema"
 import { LessonBlockRunner } from "@/features/lessons/components/lesson-block-runner"
 import { EditLessonDialog } from "@/features/lessons/components/edit-lesson-dialog"
 import { LessonMarkdown } from "@/features/lessons/components/lesson-markdown"
@@ -12,7 +17,6 @@ import {
   buildLessonGptPrompt,
   type LessonSkillTreePromptInput,
 } from "@/features/lessons/lesson-gpt-prompt"
-import type { LessonRow } from "@/features/lessons/queries"
 import { Button, Textarea, cn } from "@beyond/design-system"
 
 type Props = {
@@ -20,8 +24,6 @@ type Props = {
   skillTree: LessonSkillTreePromptInput
   className?: string
 }
-
-const markdownInitialState: LessonActionState = {}
 
 type MarkdownImportProps = {
   lessonId: string
@@ -34,24 +36,10 @@ function LessonMarkdownImportSection({
   sessionId,
   lessonMarkdown,
 }: MarkdownImportProps) {
-  const router = useRouter()
+  const me = useAccount(FirstlyAccount, { resolve: firstlyAccountResolve })
   const [draft, setDraft] = useState(() => lessonMarkdown ?? "")
-
-  const [saveState, saveAction, savePending] = useActionState(
-    saveLessonMarkdown,
-    markdownInitialState,
-  )
-  const saveWasPending = useRef(false)
-
-  useEffect(() => {
-    if (savePending) {
-      saveWasPending.current = true
-      return
-    }
-    if (!saveWasPending.current) return
-    saveWasPending.current = false
-    if (!saveState.error) router.refresh()
-  }, [savePending, saveState.error, router])
+  const [error, setError] = useState<string | null>(null)
+  const [savePending, startTransition] = useTransition()
 
   const savedMarkdownTrimmed = lessonMarkdown?.trim() ?? ""
   const hasSavedMarkdown = savedMarkdownTrimmed.length > 0
@@ -95,7 +83,22 @@ function LessonMarkdownImportSection({
             <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Import or edit Markdown
             </h3>
-            <form action={saveAction} className="flex flex-col gap-2">
+            <form
+              className="flex flex-col gap-2"
+              onSubmit={(e: FormEvent<HTMLFormElement>) => {
+                e.preventDefault()
+                setError(null)
+                startTransition(() => {
+                  assertLoaded(me)
+                  const r = updateLessonFields(me, lessonId, {
+                    lesson_markdown: draft,
+                  })
+                  if (!r.ok) {
+                    setError(r.error)
+                  }
+                })
+              }}
+            >
               <input type="hidden" name="lessonId" value={lessonId} />
               <input type="hidden" name="sessionId" value={sessionId} />
               <Textarea
@@ -107,12 +110,16 @@ function LessonMarkdownImportSection({
                 className="min-h-48 resize-y font-mono text-xs leading-relaxed"
                 aria-label="Lesson Markdown"
               />
-              {saveState.error && (
+              {error && (
                 <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {saveState.error}
+                  {error}
                 </p>
               )}
-              <Button type="submit" disabled={savePending} className="self-start">
+              <Button
+                type="submit"
+                disabled={savePending || !me.$isLoaded}
+                className="self-start"
+              >
                 {savePending ? "Saving…" : "Learn"}
               </Button>
             </form>

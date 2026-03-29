@@ -1,9 +1,14 @@
 "use client"
 
 import Link from "next/link"
+import { useTransition } from "react"
 import { Trash2 } from "lucide-react"
 
-import { deleteDeck } from "@/features/decks/actions"
+import { useAccount } from "jazz-tools/react"
+import { assertLoaded } from "jazz-tools"
+
+import { PlaydeckAccount } from "@/features/jazz/schema"
+import { deleteDeckById } from "@/features/decks/jazz-deck-mutations"
 import { Button, cn } from "@beyond/design-system"
 import { formatRelativeTimeShort } from "@/lib/format-relative-time"
 
@@ -11,15 +16,29 @@ type Props = {
   deck: {
     id: string
     title: string
-    description: string | null
     updated_at: string
   }
   firstSlideTitle?: string
 }
 
 export function DeckCard({ deck, firstSlideTitle }: Props) {
+  const me = useAccount(PlaydeckAccount, {
+    resolve: { root: { decks: true } },
+  })
+  const [pending, startTransition] = useTransition()
   const when = formatRelativeTimeShort(deck.updated_at)
-  const href = `/presenter/decks/${deck.id}/edit`
+  const href = `/presenter/decks/${deck.id}`
+
+  function onDelete() {
+    if (!me.$isLoaded) return
+    assertLoaded(me.root)
+    startTransition(() => {
+      const r = deleteDeckById(me, deck.id)
+      if (!r.ok) {
+        alert(r.error)
+      }
+    })
+  }
 
   return (
     <article
@@ -44,35 +63,32 @@ export function DeckCard({ deck, firstSlideTitle }: Props) {
           <h3 className="truncate font-heading text-sm font-semibold tracking-tight">
             {deck.title || "Untitled"}
           </h3>
-          {deck.description ? (
-            <p className="line-clamp-2 text-xs text-muted-foreground">{deck.description}</p>
-          ) : null}
           {when ? (
             <p className="text-xs text-muted-foreground tabular-nums">{when}</p>
           ) : null}
         </div>
       </Link>
 
-      <form
-        action={deleteDeck}
+      <div
         className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
       >
-        <input type="hidden" name="deckId" value={deck.id} />
         <Button
-          type="submit"
+          type="button"
           variant="secondary"
           size="icon-sm"
+          disabled={pending}
           className="size-8 border border-border/80 bg-card/95 backdrop-blur-sm"
           onClick={(e) => {
-            if (!confirm("Delete this deck and all its slides?")) {
-              e.preventDefault()
-            }
+            e.preventDefault()
+            e.stopPropagation()
+            if (!confirm("Delete this deck?")) return
+            onDelete()
           }}
         >
           <Trash2 className="h-3.5 w-3.5 text-destructive" />
           <span className="sr-only">Delete deck</span>
         </Button>
-      </form>
+      </div>
     </article>
   )
 }

@@ -24,9 +24,8 @@ import "@xyflow/react/dist/style.css"
 
 import { cn } from "@beyond/design-system"
 
-import type { LessonRow } from "@/features/lessons/queries"
+import type { LessonRow, SessionSkillGraphPayload } from "@/features/firstly/data-types"
 import { transitiveReduction } from "@/features/sessions/graph-transitive-reduction"
-import type { SessionSkillGraphPayload } from "@/features/sessions/queries"
 import { layoutSkillTreeWithElk } from "@/features/sessions/skill-tree-elk-layout"
 import { SkillTreeBezierEdge } from "@/features/sessions/session-skill-tree-edge"
 

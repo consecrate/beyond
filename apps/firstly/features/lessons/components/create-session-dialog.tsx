@@ -1,12 +1,16 @@
 "use client"
 
-import { useActionState, useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useState, useTransition, type FormEvent } from "react"
 
+import { assertLoaded } from "jazz-tools"
+import { useAccount } from "jazz-tools/react"
+
+import { firstlyAccountResolve } from "@/features/firstly/account-resolve"
 import {
-  createSession,
-  updateSession,
-  type LessonActionState,
-} from "@/features/lessons/actions"
+  createSessionFromTitle,
+  updateSessionMetadata,
+} from "@/features/firstly/jazz-firstly-mutations"
+import { FirstlyAccount } from "@/features/jazz/schema"
 import {
   Button,
   cn,
@@ -21,8 +25,6 @@ import {
   Textarea,
 } from "@beyond/design-system"
 import { Plus } from "lucide-react"
-
-const initialState: LessonActionState = {}
 
 type Props = {
   triggerClassName?: string
@@ -44,31 +46,52 @@ function SessionForm({
   edit?: Props["edit"]
   onSuccess: () => void
 }) {
-  const actionFn = mode === "edit" ? updateSession : createSession
-  const [state, action, pending] = useActionState(actionFn, initialState)
-  const wasPending = useRef(false)
-
-  useEffect(() => {
-    if (pending) {
-      wasPending.current = true
-      return
-    }
-    if (!wasPending.current) return
-    wasPending.current = false
-    if (!state.error) onSuccess()
-  }, [pending, state.error, onSuccess])
+  const me = useAccount(FirstlyAccount, { resolve: firstlyAccountResolve })
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
 
   const titleId = mode === "edit" ? "sessionTitleEdit" : "sessionTitle"
   const goalId = "sessionGoalEdit"
   const showGoal = mode === "edit" && edit?.rootLesson != null
 
   return (
-    <form action={action} className="flex flex-col gap-4">
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault()
+        setError(null)
+        const fd = new FormData(e.currentTarget)
+        startTransition(() => {
+          assertLoaded(me)
+          if (mode === "create") {
+            const title = (fd.get("title") as string)?.trim() || null
+            const r = createSessionFromTitle(me, title)
+            if (!r.ok) {
+              setError(r.error)
+              return
+            }
+            onSuccess()
+            return
+          }
+          if (edit) {
+            const title = (fd.get("title") as string)?.trim() || null
+            const goalRaw = (fd.get("goalText") as string)?.trim()
+            const goalText = goalRaw ? goalRaw : null
+            const r = updateSessionMetadata(me, edit.sessionId, title, goalText)
+            if (!r.ok) {
+              setError(r.error)
+              return
+            }
+            onSuccess()
+          }
+        })
+      }}
+    >
       {mode === "edit" ? <input type="hidden" name="sessionId" value={edit!.sessionId} /> : null}
 
-      {state.error && (
+      {error && (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {error}
         </p>
       )}
 

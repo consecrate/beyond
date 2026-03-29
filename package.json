@@ -4,29 +4,40 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=20.0.0 <25"
+  },
   "scripts": {
     "dev": "turbo run dev --filter=playdeck",
     "dev:playdeck": "turbo run dev --filter=playdeck",
     "dev:firstly": "turbo run dev --filter=firstly",
+    "dev:home": "turbo run dev --filter=home",
     "build": "turbo run build --filter=playdeck",
     "build:firstly": "turbo run build --filter=firstly",
+    "build:home": "turbo run build --filter=home",
     "start": "turbo run start --filter=playdeck",
     "start:firstly": "turbo run start --filter=firstly",
     "lint": "turbo run lint --filter=playdeck",
     "lint:firstly": "turbo run lint --filter=firstly",
+    "lint:home": "turbo run lint --filter=home",
     "test": "turbo run test --filter=playdeck",
     "test:firstly": "turbo run test --filter=firstly",
     "test:watch": "turbo run test:watch --filter=playdeck",
     "test:watch:firstly": "turbo run test:watch --filter=firstly",
     "format": "prettier --write \"apps/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\"",
     "typecheck": "turbo run typecheck --filter=playdeck",
-    "typecheck:firstly": "turbo run typecheck --filter=firstly"
+    "typecheck:firstly": "turbo run typecheck --filter=firstly",
+    "typecheck:home": "turbo run typecheck --filter=home",
+    "vercel:ignore:firstly": "turbo-ignore firstly",
+    "vercel:ignore:playdeck": "turbo-ignore playdeck",
+    "vercel:ignore:home": "turbo-ignore home"
   },
   "devDependencies": {
     "@beyond/design-system": "workspace:*",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "turbo": "^2.8.20",
+    "turbo-ignore": "^2.8.21",
     "typescript": "^5.9.3"
   }
 }

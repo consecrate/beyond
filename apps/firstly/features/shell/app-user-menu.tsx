@@ -2,18 +2,28 @@
 
 import { useEffect, useId, useRef, useState } from "react"
 
-import { signOut } from "@/features/auth/actions"
-import { Button, cn, SettingsGearIcon } from "@beyond/design-system"
+import { assertLoaded } from "jazz-tools"
+import { useAccount, useLogOut } from "jazz-tools/react"
 
-type Props = {
-  displayName: string
-  email: string
-}
+import { firstlyAccountResolve } from "@/features/firstly/account-resolve"
+import { FirstlyAccount } from "@/features/jazz/schema"
+import { cn } from "@beyond/design-system"
 
-export function AppUserMenu({ displayName, email }: Props) {
+export function AppUserMenu() {
+  const me = useAccount(FirstlyAccount, { resolve: firstlyAccountResolve })
+  const logOut = useLogOut()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuPanelId = useId()
+
+  let displayName = "…"
+  if (me.$isLoaded) {
+    assertLoaded(me)
+    assertLoaded(me.profile)
+    displayName = me.profile.name.trim() || "Learner"
+  }
+
+  const initial = displayName.trim().charAt(0).toUpperCase() || "?"
 
   useEffect(() => {
     if (!menuOpen) return
@@ -38,24 +48,27 @@ export function AppUserMenu({ displayName, email }: Props) {
   }, [menuOpen])
 
   return (
-    <div ref={menuRef} className="relative flex shrink-0 flex-col items-center">
-      <Button
+    <div ref={menuRef} className="relative flex items-center">
+      <button
         type="button"
         id={`${menuPanelId}-trigger`}
-        variant="ghost"
-        size="icon-sm"
         aria-haspopup="true"
         aria-expanded={menuOpen}
         aria-controls={menuPanelId}
         onClick={() => setMenuOpen((o) => !o)}
         className={cn(
-          "shrink-0 text-muted-foreground hover:text-foreground",
-          "focus-visible:ring-2 focus-visible:ring-ring",
+          "flex cursor-pointer items-center justify-center outline-none select-none",
+          "rounded-md focus-visible:ring-2 focus-visible:ring-ring",
         )}
-        aria-label="Account menu"
       >
-        <SettingsGearIcon className="size-5" aria-hidden />
-      </Button>
+        <span
+          className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background text-[11px] font-semibold tracking-tight text-foreground shadow-sm"
+          aria-hidden
+        >
+          {initial}
+        </span>
+        <span className="sr-only">Account menu</span>
+      </button>
       {menuOpen ? (
         <div
           id={menuPanelId}
@@ -63,12 +76,12 @@ export function AppUserMenu({ displayName, email }: Props) {
           className={cn(
             "absolute top-full right-0 z-50 mt-1.5 w-[min(10.5rem,calc(100vw-1rem))] rounded-md",
             "border border-border/50 bg-background p-px",
-            "shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08),0_2px_8px_-2px_rgba(0,0,0,0.04)]"
+            "shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08),0_2px_8px_-2px_rgba(0,0,0,0.04)]",
           )}
         >
           <div
             className={cn(
-              "overflow-hidden rounded-[calc(var(--radius-md)-1px)] bg-popover text-popover-foreground"
+              "overflow-hidden rounded-[calc(var(--radius-md)-1px)] bg-popover text-popover-foreground",
             )}
           >
             <div className="px-2 py-1.5">
@@ -76,22 +89,24 @@ export function AppUserMenu({ displayName, email }: Props) {
                 {displayName}
               </p>
               <p className="mt-0.5 truncate text-[11px] leading-tight text-muted-foreground">
-                {email}
+                Passkey account
               </p>
             </div>
             <div className="h-px bg-border/60" role="separator" />
-            <form action={signOut}>
-              <button
-                type="submit"
-                className={cn(
-                  "flex w-full cursor-pointer items-center px-2 py-1.5 text-left text-xs font-normal leading-none",
-                  "text-foreground outline-none transition-colors",
-                  "hover:bg-muted/50 focus-visible:bg-muted/50 active:bg-muted/65"
-                )}
-              >
-                Sign out
-              </button>
-            </form>
+            <button
+              type="button"
+              className={cn(
+                "flex w-full cursor-pointer items-center px-2 py-1.5 text-left text-xs font-normal leading-none",
+                "text-foreground outline-none transition-colors",
+                "hover:bg-muted/50 focus-visible:bg-muted/50 active:bg-muted/65",
+              )}
+              onClick={() => {
+                setMenuOpen(false)
+                logOut()
+              }}
+            >
+              Sign out
+            </button>
           </div>
         </div>
       ) : null}

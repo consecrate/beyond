@@ -1,8 +1,12 @@
 "use client"
 
-import { useActionState, useRef } from "react"
+import { useRef, useState, useTransition } from "react"
 
-import { createDeck, type DeckActionState } from "@/features/decks/actions"
+import { useAccount } from "jazz-tools/react"
+import { assertLoaded } from "jazz-tools"
+
+import { PlaydeckAccount } from "@/features/jazz/schema"
+import { createDeckFromTitle } from "@/features/decks/jazz-deck-mutations"
 import {
   Button,
   cn,
@@ -13,20 +17,21 @@ import {
   DialogTitle,
   DialogTrigger,
   Input,
-  Textarea,
 } from "@beyond/design-system"
 import { Plus } from "lucide-react"
 
-const initialState: DeckActionState = {}
-
 type Props = {
   triggerClassName?: string
-  /** Narrow icon + label stack for slim presenter sidebar; tile is the create card on the decks grid */
   variant?: "default" | "slim" | "tile"
 }
 
 export function CreateDeckDialog({ triggerClassName, variant = "default" }: Props) {
-  const [state, action, pending] = useActionState(createDeck, initialState)
+  const me = useAccount(PlaydeckAccount, {
+    resolve: { root: { decks: true } },
+  })
+  const [open, setOpen] = useState(false)
+  const [error, setError] = useState<string | undefined>()
+  const [pending, startTransition] = useTransition()
   const formRef = useRef<HTMLFormElement>(null)
 
   const trigger =
@@ -73,8 +78,26 @@ export function CreateDeckDialog({ triggerClassName, variant = "default" }: Prop
       </Button>
     )
 
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!me.$isLoaded) return
+    assertLoaded(me.root)
+    const fd = new FormData(e.currentTarget)
+    const title = (fd.get("title") as string) ?? ""
+    startTransition(() => {
+      const r = createDeckFromTitle(me, title)
+      if (!r.ok) {
+        setError(r.error)
+        return
+      }
+      setError(undefined)
+      setOpen(false)
+      formRef.current?.reset()
+    })
+  }
+
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={trigger} />
       <DialogContent>
         <DialogHeader>
@@ -84,10 +107,14 @@ export function CreateDeckDialog({ triggerClassName, variant = "default" }: Prop
           </DialogDescription>
         </DialogHeader>
 
-        <form ref={formRef} action={action} className="flex flex-col gap-4">
-          {state.error && (
+        <form
+          ref={formRef}
+          onSubmit={onSubmit}
+          className="flex flex-col gap-4"
+        >
+          {error && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {state.error}
+              {error}
             </p>
           )}
 
@@ -100,19 +127,6 @@ export function CreateDeckDialog({ triggerClassName, variant = "default" }: Prop
               name="title"
               required
               placeholder="My awesome deck"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="deckDescription" className="text-sm font-medium">
-              Description{" "}
-              <span className="text-muted-foreground">(optional)</span>
-            </label>
-            <Textarea
-              id="deckDescription"
-              name="description"
-              placeholder="What is this deck about?"
-              rows={2}
             />
           </div>
 

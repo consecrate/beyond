@@ -1,6 +1,5 @@
 import { LessonOverviewContent } from "@/features/lessons/components/lesson-overview-content"
-import type { LessonRow } from "@/features/lessons/queries"
-import type { SessionSkillGraphPayload } from "@/features/sessions/queries"
+import type { LessonRow, SessionSkillGraphPayload } from "@/features/firstly/data-types"
 import { cn } from "@beyond/design-system"
 
 type Props = {

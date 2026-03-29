@@ -2,11 +2,10 @@
 
 import { useState } from "react"
 
-import type { LessonRow } from "@/features/lessons/queries"
+import type { LessonRow, SessionSkillGraphPayload } from "@/features/firstly/data-types"
 import { SessionSkillTree } from "@/features/sessions/components/session-skill-tree"
 import { SessionSplitPanels } from "@/features/sessions/components/session-split-panels"
 import { SessionTextPanel } from "@/features/sessions/components/session-text-panel"
-import type { SessionSkillGraphPayload } from "@/features/sessions/queries"
 
 type Props = {
   lessons: LessonRow[]

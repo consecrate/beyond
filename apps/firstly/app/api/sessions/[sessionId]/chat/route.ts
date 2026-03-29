@@ -1,19 +1,28 @@
 import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from "ai"
+import {
+  type Account,
+  assertLoaded,
+  authenticateRequest,
+  getLoadedOrUndefined,
+  loadCoValue,
+  type Loaded,
+} from "jazz-tools"
 import { z } from "zod"
 
+import { firstlyAccountResolve } from "@/features/firstly/account-resolve"
 import {
-  createLessonInSessionForUser,
-  updateLessonInSessionForUser,
-} from "@/features/lessons/session-lesson-mutations"
-import { getLessonsForSession } from "@/features/lessons/queries"
-import {
-  addSessionGraphEdgeForUser,
-  removeSessionGraphEdgeForUser,
-  replaceSessionGraphEdgesForUser,
-} from "@/features/sessions/graph-mutations"
-import { getSession, getSessionSkillGraph } from "@/features/sessions/queries"
+  addSessionGraphEdge,
+  createLessonInSession,
+  getLessonsForSessionPayload,
+  getSessionRow,
+  getSessionSkillGraphPayload,
+  removeSessionGraphEdge,
+  replaceSessionGraphEdges,
+  updateLessonInSession,
+} from "@/features/firstly/jazz-firstly-mutations"
+import { FirstlyAccount } from "@/features/jazz/schema"
 import { resolveChatModel } from "@/lib/ai-chat-config"
-import { createClient } from "@/lib/supabase/server"
+import { getFirstlySSRAgent } from "@/lib/jazz-ssr-agent"
 
 export const maxDuration = 60
 
@@ -24,7 +33,7 @@ function buildSystemPrompt(args: {
 }): string {
   return `You are a tutor helping organize the skill tree for session "${args.sessionTitle}".
 
-Lessons in this session (use ONLY these UUIDs in tools — never invent ids):
+Lessons in this session (use ONLY these ids in tools — never invent ids):
 ${args.lessonLines}
 
 Current prerequisite edges (from → to means "complete from before to"):
@@ -39,16 +48,32 @@ export async function POST(
 ) {
   const { sessionId } = await context.params
 
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  const agent = getFirstlySSRAgent()
+  const auth = await authenticateRequest(req, {
+    loadAs: agent as unknown as Account,
+  })
+  if (auth.error || !auth.account) {
     return new Response("Unauthorized", { status: 401 })
   }
 
-  const session = await getSession(sessionId)
+  const settled = await loadCoValue(
+    FirstlyAccount as never,
+    auth.account.$jazz.id,
+    {
+      loadAs: agent as unknown as Account,
+      resolve: firstlyAccountResolve as never,
+    },
+  )
+
+  const meLoaded = getLoadedOrUndefined(settled)
+  if (!meLoaded) {
+    return new Response("Unauthorized", { status: 401 })
+  }
+
+  const me = meLoaded as Loaded<typeof FirstlyAccount>
+  assertLoaded(me)
+
+  const session = getSessionRow(me, sessionId)
   if (!session) {
     return new Response("Not found", { status: 404 })
   }
@@ -69,10 +94,8 @@ export async function POST(
     return new Response("Expected messages array", { status: 400 })
   }
 
-  const [lessons, skillGraph] = await Promise.all([
-    getLessonsForSession(sessionId),
-    getSessionSkillGraph(sessionId),
-  ])
+  const lessons = getLessonsForSessionPayload(me, sessionId)
+  const skillGraph = getSessionSkillGraphPayload(me, sessionId)
 
   const title = session.title?.trim() || "Untitled session"
   const lessonLines =
@@ -109,11 +132,9 @@ export async function POST(
         "List current lessons and prerequisite edges (always up to date — use after mutations).",
       inputSchema: z.object({}),
       execute: async () => {
-        const [freshLessons, freshGraph] = await Promise.all([
-          getLessonsForSession(sessionId),
-          getSessionSkillGraph(sessionId),
-        ])
-        const byId = new Map(
+        const freshLessons = getLessonsForSessionPayload(me, sessionId)
+        const freshGraph = getSessionSkillGraphPayload(me, sessionId)
+        const byIdInner = new Map(
           freshLessons.map((l) => [l.id, l.title?.trim() || "Untitled"]),
         )
         const edgeRows = freshGraph?.edges ?? []
@@ -126,21 +147,21 @@ export async function POST(
           prerequisiteEdges: edgeRows.map((e) => ({
             fromLessonId: e.from_lesson_id,
             toLessonId: e.to_lesson_id,
-            fromTitle: byId.get(e.from_lesson_id) ?? "?",
-            toTitle: byId.get(e.to_lesson_id) ?? "?",
+            fromTitle: byIdInner.get(e.from_lesson_id) ?? "?",
+            toTitle: byIdInner.get(e.to_lesson_id) ?? "?",
           })),
         }
       },
     }),
     createSessionLesson: tool({
       description:
-        "Add a new lesson to this session (gets a new UUID). Use before linking prerequisites if the user asks for a new node.",
+        "Add a new lesson to this session (gets a new id). Use before linking prerequisites if the user asks for a new node.",
       inputSchema: z.object({
         title: z.string().min(1),
         goalText: z.string().optional(),
       }),
       execute: async ({ title, goalText }) => {
-        const r = await createLessonInSessionForUser(sessionId, {
+        const r = createLessonInSession(me, sessionId, {
           title,
           goalText: goalText ?? null,
         })
@@ -152,12 +173,12 @@ export async function POST(
       description:
         "Update the title and/or learning goal of a lesson in this session (use lesson id from listSessionLessons).",
       inputSchema: z.object({
-        lessonId: z.string().uuid(),
+        lessonId: z.string(),
         title: z.string().optional(),
         goalText: z.string().nullable().optional(),
       }),
       execute: async ({ lessonId, title, goalText }) => {
-        const r = await updateLessonInSessionForUser(sessionId, lessonId, {
+        const r = updateLessonInSession(me, sessionId, lessonId, {
           title,
           goalText,
         })
@@ -169,15 +190,11 @@ export async function POST(
       description:
         "Add one prerequisite edge: the learner completes fromLessonId before toLessonId.",
       inputSchema: z.object({
-        fromLessonId: z.string().uuid(),
-        toLessonId: z.string().uuid(),
+        fromLessonId: z.string(),
+        toLessonId: z.string(),
       }),
       execute: async ({ fromLessonId, toLessonId }) => {
-        const r = await addSessionGraphEdgeForUser(
-          sessionId,
-          fromLessonId,
-          toLessonId,
-        )
+        const r = addSessionGraphEdge(me, sessionId, fromLessonId, toLessonId)
         if (!r.ok) return { ok: false as const, error: r.error }
         return { ok: true as const }
       },
@@ -185,15 +202,11 @@ export async function POST(
     removeSessionGraphEdge: tool({
       description: "Remove one prerequisite edge between two lessons.",
       inputSchema: z.object({
-        fromLessonId: z.string().uuid(),
-        toLessonId: z.string().uuid(),
+        fromLessonId: z.string(),
+        toLessonId: z.string(),
       }),
       execute: async ({ fromLessonId, toLessonId }) => {
-        const r = await removeSessionGraphEdgeForUser(
-          sessionId,
-          fromLessonId,
-          toLessonId,
-        )
+        const r = removeSessionGraphEdge(me, sessionId, fromLessonId, toLessonId)
         if (!r.ok) return { ok: false as const, error: r.error }
         return { ok: true as const }
       },
@@ -204,13 +217,14 @@ export async function POST(
       inputSchema: z.object({
         edges: z.array(
           z.object({
-            fromLessonId: z.string().uuid(),
-            toLessonId: z.string().uuid(),
+            fromLessonId: z.string(),
+            toLessonId: z.string(),
           }),
         ),
       }),
       execute: async ({ edges }) => {
-        const r = await replaceSessionGraphEdgesForUser(
+        const r = replaceSessionGraphEdges(
+          me,
           sessionId,
           edges.map((e) => ({
             from_lesson_id: e.fromLessonId,

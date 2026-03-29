@@ -1,10 +1,16 @@
 "use client"
 
 import Link from "next/link"
+import { useTransition } from "react"
 import { Trash2 } from "lucide-react"
 
-import { deleteSession } from "@/features/lessons/actions"
-import type { SessionRow } from "@/features/sessions/queries"
+import { assertLoaded } from "jazz-tools"
+import { useAccount } from "jazz-tools/react"
+
+import { firstlyAccountResolve } from "@/features/firstly/account-resolve"
+import { deleteSessionById } from "@/features/firstly/jazz-firstly-mutations"
+import { FirstlyAccount } from "@/features/jazz/schema"
+import type { SessionRow } from "@/features/firstly/data-types"
 import { Button, cn } from "@beyond/design-system"
 import { formatRelativeTimeShort } from "@/lib/format-relative-time"
 
@@ -13,6 +19,8 @@ type Props = {
 }
 
 export function SessionCard({ session }: Props) {
+  const me = useAccount(FirstlyAccount, { resolve: firstlyAccountResolve })
+  const [pending, startTransition] = useTransition()
   const when = formatRelativeTimeShort(session.updated_at)
   const href = `/sessions/${session.id}`
 
@@ -40,26 +48,32 @@ export function SessionCard({ session }: Props) {
         </div>
       </Link>
 
-      <form
-        action={deleteSession}
+      <div
         className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
       >
-        <input type="hidden" name="sessionId" value={session.id} />
         <Button
-          type="submit"
+          type="button"
           variant="secondary"
           size="icon-sm"
+          disabled={pending || !me.$isLoaded}
           className="size-8 border border-border/80 bg-card/95 backdrop-blur-sm"
           onClick={(e) => {
-            if (!confirm("Delete this session and all lessons in it?")) {
-              e.preventDefault()
-            }
+            e.preventDefault()
+            e.stopPropagation()
+            if (!confirm("Delete this session and all lessons in it?")) return
+            startTransition(() => {
+              assertLoaded(me)
+              const r = deleteSessionById(me, session.id)
+              if (!r.ok) {
+                alert(r.error)
+              }
+            })
           }}
         >
           <Trash2 className="h-3.5 w-3.5 text-destructive" />
           <span className="sr-only">Delete session</span>
         </Button>
-      </form>
+      </div>
     </article>
   )
 }

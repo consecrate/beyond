@@ -2,10 +2,12 @@
 
 import { useCallback, useState, useTransition, type FormEvent } from "react"
 
-import {
-  applySkillTreeImport,
-  type SkillTreeImportState,
-} from "@/features/sessions/skill-tree-import-actions"
+import { assertLoaded } from "jazz-tools"
+import { useAccount } from "jazz-tools/react"
+
+import { firstlyAccountResolve } from "@/features/firstly/account-resolve"
+import { FirstlyAccount } from "@/features/jazz/schema"
+import { applySkillTreeImport } from "@/features/sessions/jazz-skill-tree-import"
 import {
   Button,
   cn,
@@ -38,41 +40,41 @@ function SkillTreeIcon({ className }: { className?: string }) {
   )
 }
 
-const initialState: SkillTreeImportState = {}
-
 type Props = {
   sessionId: string
   className?: string
 }
 
 export function SessionSkillTreeImportDialog({ sessionId, className }: Props) {
+  const me = useAccount(FirstlyAccount, { resolve: firstlyAccountResolve })
   const [open, setOpen] = useState(false)
   const [json, setJson] = useState("")
-  const [state, setState] = useState<SkillTreeImportState>(initialState)
+  const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const onSubmit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault()
-      const form = e.currentTarget
-      const fd = new FormData(form)
-      startTransition(async () => {
-        const next = await applySkillTreeImport(initialState, fd)
-        setState(next)
-        if (!next.error) {
-          setOpen(false)
-          setJson("")
+      setError(null)
+      startTransition(() => {
+        assertLoaded(me)
+        const next = applySkillTreeImport(me, sessionId, json)
+        if (next.error) {
+          setError(next.error)
+          return
         }
+        setOpen(false)
+        setJson("")
       })
     },
-    [],
+    [me, sessionId, json],
   )
 
   const onOpenChange = useCallback((next: boolean) => {
     setOpen(next)
     if (!next) {
       setJson("")
-      setState(initialState)
+      setError(null)
     }
   }, [])
 
@@ -106,7 +108,6 @@ export function SessionSkillTreeImportDialog({ sessionId, className }: Props) {
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
-          <input type="hidden" name="sessionId" value={sessionId} />
           <Textarea
             name="json"
             value={json}
@@ -118,12 +119,12 @@ export function SessionSkillTreeImportDialog({ sessionId, className }: Props) {
             autoComplete="off"
             aria-label="Skill tree JSON"
           />
-          {state.error ? (
+          {error ? (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {state.error}
+              {error}
             </p>
           ) : null}
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={isPending || !me.$isLoaded}>
             {isPending ? "Updating…" : "Update"}
           </Button>
         </form>

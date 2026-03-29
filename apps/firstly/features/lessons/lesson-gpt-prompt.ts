@@ -3,7 +3,7 @@
  * (see LESSON_GENEARTION.md). Keep in sync with product rules there.
  */
 
-import type { LessonRow } from "@/features/lessons/queries"
+import type { LessonRow } from "@/features/firstly/data-types"
 
 export type LessonPromptFields = {
   title: string | null
