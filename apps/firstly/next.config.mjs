@@ -6,6 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@beyond/design-system"],
+  outputFileTracingRoot: path.join(__dirname, "../.."),
   turbopack: {
     root: path.join(__dirname, "../.."),
   },

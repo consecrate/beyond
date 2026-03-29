@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const nextConfig = {
   transpilePackages: ["@beyond/design-system", "reveal.js"],
   serverExternalPackages: ["canvas"],
+  outputFileTracingRoot: path.join(__dirname, "../.."),
   turbopack: {
     root: path.join(__dirname, "../.."),
   },
