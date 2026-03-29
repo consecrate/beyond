@@ -27,10 +27,7 @@
     "format": "prettier --write \"apps/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\"",
     "typecheck": "turbo run typecheck --filter=playdeck",
     "typecheck:firstly": "turbo run typecheck --filter=firstly",
-    "typecheck:home": "turbo run typecheck --filter=home",
-    "vercel:ignore:firstly": "turbo-ignore firstly",
-    "vercel:ignore:playdeck": "turbo-ignore playdeck",
-    "vercel:ignore:home": "turbo-ignore home"
+    "typecheck:home": "turbo run typecheck --filter=home"
   },
   "devDependencies": {
     "@beyond/design-system": "workspace:*",

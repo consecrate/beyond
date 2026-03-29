@@ -24,6 +24,9 @@ packages/*/dist/
 # turborepo
 .turbo/
 
+# vercel (local link state; use dashboard or vercel link --repo)
+.vercel/
+
 # misc
 .letta/
 .DS_Store

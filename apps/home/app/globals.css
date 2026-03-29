@@ -1,12 +1,11 @@
 /* Aligned with packages/design-system — same tokens as firstly & playdeck (warm neutrals + coral accent). */
+/* --font-sans / --font-serif come from next/font in layout.tsx */
 :root {
   --background: oklch(0.978 0.005 90);
   --foreground: oklch(0.264 0.016 46.7);
   --muted-foreground: oklch(0.264 0.016 46.7 / 60%);
   --accent: oklch(0.652 0.212 22.1);
   --border: oklch(0.264 0.016 46.7 / 10%);
-  --font-sans: "Google Sans Flex", system-ui, sans-serif;
-  --font-serif: "Newsreader", Georgia, "Times New Roman", serif;
 }
 
 @media (prefers-color-scheme: dark) {
