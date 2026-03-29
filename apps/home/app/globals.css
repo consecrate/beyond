@@ -57,7 +57,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 1.25rem;
+  margin-bottom: 5px;
   text-align: center;
 }
 
@@ -84,24 +84,76 @@ body {
 }
 
 .intro {
-  margin: 0 0 2.5rem;
+  text-align: left;
 }
 
-.intro p {
-  margin: 0 0 1.25rem;
-  max-width: 42rem;
-}
-
-.intro p:last-child {
-  margin-bottom: 0;
+.intro .bio {
+  margin: 5px 0;
 }
 
 .lede {
+  margin: 5px 0;
+  padding: 0 0 0 1rem;
+  border-left: 3px solid #000;
   font-family: var(--font-serif);
+  font-size: 19px;
   font-style: italic;
   font-weight: 400;
   font-variation-settings: normal;
   color: var(--muted-foreground);
+}
+
+@media (prefers-color-scheme: dark) {
+  .lede {
+    border-left-color: oklch(0.978 0.005 90);
+  }
+}
+
+.bio {
+  color: var(--foreground);
+}
+
+.expand-trigger {
+  display: inline;
+  margin: 0;
+  padding: 0.1em 0.4em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  vertical-align: baseline;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.expand-trigger:hover {
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+
+.expand-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.expand-phrase {
+  font-weight: 400;
+}
+
+.project-links {
+  max-width: 100%;
+  list-style: disc;
+  margin: 5px 0;
+}
+
+.project-links li {
+  padding-inline-start: 0.25em;
+}
+
+.project-links li + li {
+  margin-top: 0.35rem;
 }
 
 .intro a {

@@ -1,5 +1,7 @@
 import Image from "next/image"
 
+import { ExpandableBio } from "./expandable-bio"
+
 export default function Page() {
   return (
     <main className="page">
@@ -17,10 +19,23 @@ export default function Page() {
       </div>
 
       <div className="intro">
-        <p className="lede">
+        <blockquote className="lede">
           The true soldier fights not because he hates what is in front of him, but because he loves what is
           behind him.
-        </p>
+        </blockquote>
+        <ExpandableBio />
+        <ul className="project-links">
+          <li>
+            <a href="https://play.joshing.us" rel="noopener noreferrer">
+              PlayDeck
+            </a>
+          </li>
+          <li>
+            <a href="https://firstly.joshing.us" rel="noopener noreferrer">
+              Firstly
+            </a>
+          </li>
+        </ul>
       </div>
     </main>
   )
