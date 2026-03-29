@@ -1,5 +1,5 @@
 {
-  "installCommand": "cd \"$(git rev-parse --show-toplevel)\" && corepack enable && corepack prepare pnpm@10.15.0 --activate && pnpm install",
-  "buildCommand": "cd \"$(git rev-parse --show-toplevel)\" && pnpm exec turbo run build --filter=firstly",
-  "ignoreCommand": "cd \"$(git rev-parse --show-toplevel)\" && pnpm exec turbo-ignore firstly"
+  "installCommand": "cd ../.. && corepack enable && pnpm install",
+  "buildCommand": "cd ../.. && pnpm exec turbo run build --filter=firstly",
+  "ignoreCommand": "cd ../.. && pnpm exec turbo-ignore firstly"
 }
