@@ -1,5 +1,5 @@
 {
   "installCommand": "cd ../.. && corepack enable && pnpm install",
   "buildCommand": "cd ../.. && pnpm exec turbo run build --filter=playdeck",
-  "ignoreCommand": "cd ../.. && pnpm exec turbo-ignore playdeck"
+  "ignoreCommand": "cd ../.. && npx turbo-ignore playdeck"
 }

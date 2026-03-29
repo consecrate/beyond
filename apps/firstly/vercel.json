@@ -1,5 +1,5 @@
 {
   "installCommand": "cd ../.. && corepack enable && pnpm install",
   "buildCommand": "cd ../.. && pnpm exec turbo run build --filter=firstly",
-  "ignoreCommand": "cd ../.. && pnpm exec turbo-ignore firstly"
+  "ignoreCommand": "cd ../.. && npx turbo-ignore firstly"
 }
