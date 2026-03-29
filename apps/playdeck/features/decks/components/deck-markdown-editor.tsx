@@ -1,10 +1,15 @@
 "use client"
 
 import { markdown } from "@codemirror/lang-markdown"
+import { EditorView } from "@codemirror/view"
 import { useTheme } from "next-themes"
 import { useMemo } from "react"
 import CodeMirror from "@uiw/react-codemirror"
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github"
+
+import { cn } from "@beyond/design-system"
+
+import { markdownFormattingKeymap } from "@/features/decks/codemirror-markdown-formatting"
 
 type Props = {
   value: string
@@ -20,17 +25,17 @@ export function DeckMarkdownEditor({ value, onChange, className }: Props) {
   )
 
   const extensions = useMemo(
-    () => [markdown(), themeExt],
+    () => [markdown(), EditorView.lineWrapping, themeExt, markdownFormattingKeymap],
     [themeExt],
   )
 
   return (
-    <div className={className}>
+    <div className={cn("flex min-h-0 flex-col", className)}>
       <CodeMirror
         theme="none"
         value={value}
         height="100%"
-        className="min-h-0 flex-1 overflow-hidden [&_.cm-editor]:min-h-[260px] [&_.cm-editor]:h-full [&_.cm-scroller]:min-h-[260px]"
+        className="min-h-0 flex-1 overflow-hidden [&_.cm-editor]:flex [&_.cm-editor]:min-h-0 [&_.cm-editor]:h-full [&_.cm-editor]:flex-col [&_.cm-scroller]:h-full [&_.cm-scroller]:min-h-[260px]"
         extensions={extensions}
         onChange={onChange}
         basicSetup={{

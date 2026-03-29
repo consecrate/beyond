@@ -14,10 +14,6 @@ type Props = {
   displayName: string
 }
 
-function slidesServerKey(slides: DeckSlideView[]) {
-  return slides.map((s) => `${s.id}:${s.updated_at}`).join("|")
-}
-
 export function DeckMarkdownWorkspace({
   deckId,
   initialTitle,
@@ -65,11 +61,7 @@ export function DeckMarkdownWorkspace({
         </div>
       </header>
 
-      <DeckEditorWorkspace
-        key={slidesServerKey(slides)}
-        deckId={deckId}
-        slides={slides}
-      />
+      <DeckEditorWorkspace key={deckId} deckId={deckId} slides={slides} />
     </div>
   )
 }

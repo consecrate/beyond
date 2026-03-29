@@ -12,6 +12,14 @@ export const Deck = co.map({
   slides: co.list(DeckSlide),
 })
 
+/** Public-read live deck snapshot + authoritative slide index for viewers. */
+export const LiveSession = co.map({
+  deckTitle: z.string(),
+  markdown: z.string(),
+  activeSlideIndex: z.number(),
+  status: z.union([z.literal("live"), z.literal("ended")]),
+})
+
 export const PlaydeckRoot = co.map({
   decks: co.list(Deck),
 })

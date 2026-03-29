@@ -9,12 +9,13 @@ const HEADING_LINE_RE = /^#{1,2}\s+(.+)$/
 /**
  * Split deck Markdown on `\n---\n`. First `#` / `##` line in each chunk is the slide title.
  * Do not put a standalone `---` on its own line inside fenced code blocks (MVP limitation).
+ * Treats missing `md` like empty string (e.g. Jazz field not synced yet).
  */
-export function parseMarkdownDocumentToSlides(md: string): ParsedSlide[] {
-  const normalized = md.replace(/\r\n/g, "\n")
+export function parseMarkdownDocumentToSlides(md?: string | null): ParsedSlide[] {
+  const normalized = (md ?? "").replace(/\r\n/g, "\n")
   if (normalized.trim() === "") return []
 
-  const chunks = normalized.split(/\n---\n/)
+  const chunks = normalized.split("\n---\n")
   return chunks.map((chunk) => parseChunk(chunk))
 }
 
@@ -26,7 +27,7 @@ function parseChunk(chunk: string): ParsedSlide {
   let firstNonEmpty = -1
   let firstLine = ""
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+    const line = lines[i]!.trim()
     if (line !== "") {
       firstNonEmpty = i
       firstLine = line
@@ -40,7 +41,7 @@ function parseChunk(chunk: string): ParsedSlide {
     return { title: "", body: trimmed }
   }
 
-  const title = m[1].trim()
+  const title = m[1]!.trim()
   const rest = lines.slice(firstNonEmpty + 1).join("\n")
   return { title, body: rest.replace(/^\n+/, "") }
 }
@@ -58,6 +59,22 @@ function slideRowToChunk(slide: DeckSlideView): string {
     return `# ${t}\n\n${body}`
   }
   return slide.body.trim()
+}
+
+/** True when `md` parses to the same slide title/body pairs as `slides` (ignores ids and timestamps). */
+export function markdownMatchesSlides(
+  md: string,
+  slides: DeckSlideView[],
+): boolean {
+  const parsed = parseMarkdownDocumentToSlides(md)
+  if (parsed.length !== slides.length) return false
+  for (let i = 0; i < parsed.length; i++) {
+    const p = parsed[i]!
+    const v = slides[i]!
+    if (p.title !== v.title.trim()) return false
+    if (p.body !== v.body) return false
+  }
+  return true
 }
 
 /** Same mapping as Present mode: HTML from body Markdown; title for grid labels. */

@@ -16,6 +16,7 @@ import {
   LayoutGrid,
   Loader2,
   Minimize2,
+  Radio,
 } from "lucide-react"
 import Link from "next/link"
 import Reveal from "reveal.js"
@@ -24,11 +25,20 @@ import type { RevealApi } from "reveal.js"
 import "reveal.js/reveal.css"
 import "reveal.js/theme/black.css"
 
+export type DeckLiveControls = {
+  isActive: boolean
+  joinCode: string | null
+  onGoLive: (currentSlideIndex: number) => void | Promise<void>
+  onEndLive: () => void | Promise<void>
+  onSlideIndexSync?: (index: number) => void
+}
+
 export type DeckRevealPresenterProps = {
   deckTitle: string
   slides: RevealSlideModel[]
   backHref: string
   initialSlideIndex?: number
+  live?: DeckLiveControls
 }
 
 const LAZY_RADIUS = 2
@@ -38,6 +48,7 @@ export function DeckRevealPresenter({
   slides,
   backHref,
   initialSlideIndex = 0,
+  live,
 }: DeckRevealPresenterProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -50,8 +61,16 @@ export function DeckRevealPresenter({
   const deckApiRef = useRef<RevealApi | null>(null)
   const initialIndexRef = useRef(initialSlideIndex)
   const onSlideChangedHandlerRef = useRef<() => void>(() => {})
+  const liveSlideSyncRef = useRef<((index: number) => void) | undefined>(
+    undefined,
+  )
 
   const numSlides = slides.length
+
+  useEffect(() => {
+    liveSlideSyncRef.current =
+      live?.isActive && live.onSlideIndexSync ? live.onSlideIndexSync : undefined
+  }, [live?.isActive, live?.onSlideIndexSync])
 
   const replaceSlideQuery = useCallback(
     (index: number) => {
@@ -68,6 +87,7 @@ export function DeckRevealPresenter({
     if (typeof h !== "number" || Number.isNaN(h)) return
     setActiveIndex(h)
     replaceSlideQuery(h)
+    liveSlideSyncRef.current?.(h)
   }, [replaceSlideQuery])
 
   useEffect(() => {
@@ -142,6 +162,7 @@ export function DeckRevealPresenter({
       setActiveIndex(i)
       deckApiRef.current?.slide(i, 0)
       replaceSlideQuery(i)
+      liveSlideSyncRef.current?.(i)
       setView("slide")
     },
     [replaceSlideQuery],
@@ -205,6 +226,40 @@ export function DeckRevealPresenter({
           >
             <LayoutGrid className="h-4 w-4" />
           </Button>
+          {live ? (
+            <>
+              {!live.isActive ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="ml-1"
+                  onClick={() => void live.onGoLive(activeIndex)}
+                >
+                  <Radio className="mr-1.5 h-3.5 w-3.5" />
+                  Go Live
+                </Button>
+              ) : (
+                <>
+                  <span
+                    className="max-w-[9rem] truncate rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-xs tabular-nums sm:max-w-[10rem]"
+                    title="Share this code with viewers"
+                  >
+                    {live.joinCode ?? "—"}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-1"
+                    onClick={() => void live.onEndLive()}
+                  >
+                    End Live
+                  </Button>
+                </>
+              )}
+            </>
+          ) : null}
           <Link
             href={backHref}
             className={cn(
@@ -284,7 +339,7 @@ export function DeckRevealPresenter({
   )
 }
 
-function RevealSlideBody({
+export function RevealSlideBody({
   html,
   slideIndex,
   activeIndex,

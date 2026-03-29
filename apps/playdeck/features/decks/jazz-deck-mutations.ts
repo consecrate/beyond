@@ -82,11 +82,14 @@ export function replaceSlidesFromMarkdown(
   const deck = findDeck(loadedAccountRoot(me), deckId)
   if (!deck) return { ok: false, error: "Deck not found." }
 
-  let slides = parseMarkdownDocumentToSlides(markdown)
-  slides = slides.filter(
+  const slides = parseMarkdownDocumentToSlides(markdown)
+  if (slides.length === 0) {
+    return { ok: false, error: "Add at least one slide (Markdown cannot be empty)." }
+  }
+  const hasContent = slides.some(
     (s) => s.title.trim() !== "" || s.body.trim() !== "",
   )
-  if (slides.length === 0) {
+  if (!hasContent) {
     return { ok: false, error: "Add at least one slide (Markdown cannot be empty)." }
   }
 

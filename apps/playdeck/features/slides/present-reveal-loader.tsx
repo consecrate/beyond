@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic"
 
+import type { DeckLiveControls } from "@/features/slides/deck-reveal-presenter"
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 
 const DeckRevealPresenter = dynamic(
@@ -24,6 +25,7 @@ type PresentRevealLoaderProps = {
   slides: RevealSlideModel[]
   backHref: string
   initialSlideIndex?: number
+  live?: DeckLiveControls
 }
 
 export function PresentRevealLoader(props: PresentRevealLoaderProps) {
