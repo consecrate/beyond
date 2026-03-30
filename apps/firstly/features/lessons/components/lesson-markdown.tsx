@@ -2,6 +2,8 @@
 
 import "katex/dist/katex.min.css"
 
+import { Children, isValidElement } from "react"
+import type { Components } from "react-markdown"
 import ReactMarkdown from "react-markdown"
 import rehypeKatex from "rehype-katex"
 import remarkGfm from "remark-gfm"
@@ -9,16 +11,86 @@ import remarkMath from "remark-math"
 
 import { cn } from "@beyond/design-system"
 
+import { LessonMermaid } from "@/features/lessons/components/lesson-mermaid"
+
+const remarkPlugins = [remarkGfm, remarkMath]
+const rehypePlugins = [rehypeKatex]
+
+function createMarkdownComponents(allowMermaid: boolean): Components {
+  return {
+    code: ({ className, children, ...props }) => {
+      if (allowMermaid && className?.includes("language-mermaid")) {
+        const text = String(children).replace(/\n$/, "")
+        return <LessonMermaid source={text} />
+      }
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      )
+    },
+    pre: ({ children }) => {
+      if (!allowMermaid) {
+        return <pre>{children}</pre>
+      }
+      if (Children.count(children) === 1) {
+        const only = Children.only(children)
+        if (isValidElement(only) && only.type === LessonMermaid) {
+          return (
+            <div className="my-3 overflow-x-auto rounded-md border border-border/60 bg-muted/30 p-3">
+              {only}
+            </div>
+          )
+        }
+      }
+      return <pre>{children}</pre>
+    },
+  }
+}
+
+/** Phrasing-only wrapper so math + text are valid inside `<h1>`–`<h6>`. */
+const inlineComponents: Components = {
+  p: ({ children }) => <span className="inline leading-[inherit]">{children}</span>,
+  ...createMarkdownComponents(false),
+}
+
+const blockComponents = createMarkdownComponents(true)
+
 type Props = {
   markdown: string
   className?: string
+  /**
+   * `inline`: span root + `<p>` → `<span>` for use inside headings (math + GFM).
+   * Default block layout uses a `div` root.
+   */
+  variant?: "default" | "inline"
 }
 
 /**
- * Renders Markdown with GFM and TeX math (`$...$`, `$$...$$`) via KaTeX.
+ * Renders Markdown with GFM, TeX math (`$...$`, `$$...$$`) via KaTeX, and fenced ` ```mermaid ` diagrams.
  */
-export function LessonMarkdown({ markdown, className }: Props) {
+export function LessonMarkdown({ markdown, className, variant = "default" }: Props) {
   if (!markdown.trim()) return null
+
+  if (variant === "inline") {
+    return (
+      <span
+        className={cn(
+          "lesson-markdown lesson-markdown-inline min-w-0 text-inherit",
+          "[&_.katex]:text-[0.95em] [&_.katex-display]:my-1 [&_.katex-display]:max-w-full [&_.katex-display]:overflow-x-auto",
+          className,
+        )}
+      >
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+          components={inlineComponents}
+        >
+          {markdown}
+        </ReactMarkdown>
+      </span>
+    )
+  }
 
   return (
     <div
@@ -42,7 +114,11 @@ export function LessonMarkdown({ markdown, className }: Props) {
         className,
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
+        components={blockComponents}
+      >
         {markdown}
       </ReactMarkdown>
     </div>

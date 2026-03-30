@@ -136,6 +136,7 @@ export function applySkillTreeImportPayload(
   for (const L of lessons) {
     const lesson = FirstlyLesson.create(
       {
+        owner_account_id: me.$jazz.id,
         title: L.title,
         goal_text: L.goalText,
         lesson_markdown: "",
@@ -143,6 +144,7 @@ export function applySkillTreeImportPayload(
         subject_domain: "math",
         future_graph_mode: "lesson_local",
         status: "active",
+        skill_tree_completed: false,
         created_at: ts,
         updated_at: ts,
       },

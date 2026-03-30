@@ -49,7 +49,10 @@ function McqCard({
     >
       <header className="mb-3 flex items-start justify-between gap-2">
         <h2 className="font-display text-base font-semibold tracking-tight text-foreground">
-          {block.title?.trim() || "Question"}
+          <LessonMarkdown
+            markdown={block.title?.trim() || "Question"}
+            variant="inline"
+          />
         </h2>
         <button
           type="button"
@@ -153,7 +156,7 @@ function ContentCard({
       <header className="mb-3 flex items-start justify-between gap-2">
         {block.title?.trim() ? (
           <h2 className="font-display text-base font-semibold tracking-tight text-foreground">
-            {block.title}
+            <LessonMarkdown markdown={block.title} variant="inline" />
           </h2>
         ) : (
           <h2 className="font-display text-base font-semibold tracking-tight text-foreground">
@@ -183,7 +186,11 @@ function ContentCard({
   )
 }
 
-export function LessonBlockRunner({ blocks, lessonId, className }: Props) {
+export function LessonBlockRunner({
+  blocks,
+  lessonId,
+  className,
+}: Props) {
   const [revealed, setRevealed] = useState(1)
   const [mcqMap, setMcqMap] = useState<Record<number, McqUiState>>({})
 

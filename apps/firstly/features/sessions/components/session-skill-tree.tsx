@@ -56,6 +56,7 @@ type SkillLessonNodeData = {
   outgoingCount: number
   /** Number of incoming edges (bottom target handles, spread). */
   incomingCount: number
+  completed: boolean
   selected?: boolean
 }
 
@@ -78,10 +79,17 @@ const SkillLessonNodeView = memo(function SkillLessonNodeView({
   return (
     <div
       className={cn(
-        "rounded-sm border bg-card px-3 py-2 text-center text-sm shadow-sm",
+        "rounded-sm border px-3 py-2 text-center text-sm shadow-sm",
         data.selected
-          ? "border-primary ring-2 ring-primary/35"
-          : "border-border",
+          ? cn(
+              "border-primary ring-2 ring-primary/35",
+              data.completed
+                ? "bg-emerald-500/10 dark:bg-emerald-500/14"
+                : "bg-card",
+            )
+          : data.completed
+            ? "border-emerald-600/45 bg-emerald-500/12 dark:bg-emerald-500/18"
+            : "border-border bg-card",
       )}
       style={{ width: SKILL_NODE_WIDTH_PX, maxWidth: SKILL_NODE_WIDTH_PX }}
     >
@@ -296,6 +304,7 @@ function buildFlowState(
           label: lesson.title?.trim() || "Untitled lesson",
           outgoingCount: outgoingByLesson.get(lesson.id) ?? 0,
           incomingCount: incomingByLesson.get(lesson.id) ?? 0,
+          completed: lesson.skill_tree_completed,
         },
       })
     })

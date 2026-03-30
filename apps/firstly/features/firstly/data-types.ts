@@ -32,6 +32,7 @@ export type LessonRow = {
   subject_domain: string
   future_graph_mode: string
   status: string
+  skill_tree_completed: boolean
   structured_lesson_json: null
   created_at: string
   updated_at: string

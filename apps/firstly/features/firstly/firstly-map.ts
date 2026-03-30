@@ -103,7 +103,7 @@ export function lessonToRow(
   return {
     id: coValueId(lesson),
     session_id: sessionId,
-    user_id: userId,
+    user_id: lesson.owner_account_id ?? userId,
     title: title === "" ? null : lesson.title,
     goal_text: goal === "" ? null : lesson.goal_text,
     lesson_markdown: md.trim() === "" ? null : md,
@@ -111,6 +111,7 @@ export function lessonToRow(
     subject_domain: lesson.subject_domain,
     future_graph_mode: lesson.future_graph_mode,
     status: lesson.status,
+    skill_tree_completed: lesson.skill_tree_completed === true,
     structured_lesson_json: null,
     created_at: lesson.created_at,
     updated_at: lesson.updated_at,

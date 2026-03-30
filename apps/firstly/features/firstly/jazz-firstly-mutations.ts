@@ -93,6 +93,7 @@ export function getLessonPayload(
 function lessonDefaults(me: Loaded<typeof FirstlyAccount>, t: string) {
   const ts = nowIso()
   return {
+    owner_account_id: me.$jazz.id,
     title: t,
     goal_text: "",
     lesson_markdown: "",
@@ -100,6 +101,7 @@ function lessonDefaults(me: Loaded<typeof FirstlyAccount>, t: string) {
     subject_domain: "math",
     future_graph_mode: "lesson_local",
     status: "active",
+    skill_tree_completed: false,
     created_at: ts,
     updated_at: ts,
   }
@@ -218,6 +220,7 @@ export function updateLessonFields(
     title?: string | null
     goal_text?: string | null
     lesson_markdown?: string | null
+    skill_tree_completed?: boolean
   },
 ): { ok: true } | { ok: false; error: string } {
   const found = findLessonInRoot(loadedRoot(me), lessonId)
@@ -230,6 +233,7 @@ export function updateLessonFields(
     title: string
     goal_text: string
     lesson_markdown: string
+    skill_tree_completed: boolean
     updated_at: string
   }> = { updated_at: ts }
 
@@ -248,6 +252,9 @@ export function updateLessonFields(
       const trimmed = raw.trim()
       next.lesson_markdown = trimmed === "" ? "" : raw
     }
+  }
+  if (patch.skill_tree_completed !== undefined) {
+    next.skill_tree_completed = patch.skill_tree_completed
   }
 
   lesson.$jazz.applyDiff(next)
@@ -345,6 +352,7 @@ export function createLessonInSession(
   const ts = nowIso()
   const lesson = FirstlyLesson.create(
     {
+      owner_account_id: me.$jazz.id,
       title,
       goal_text: gRaw ? gRaw : "",
       lesson_markdown: "",
@@ -352,6 +360,7 @@ export function createLessonInSession(
       subject_domain: "math",
       future_graph_mode: "lesson_local",
       status: "active",
+      skill_tree_completed: false,
       created_at: ts,
       updated_at: ts,
     },

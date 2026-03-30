@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, type FormEvent } from "react"
+import { useRef, useState, useTransition, type FormEvent } from "react"
 
 import { assertLoaded } from "jazz-tools"
 import { useAccount } from "jazz-tools/react"
@@ -30,6 +30,7 @@ export function LessonMetadataForm({
   const me = useAccount(FirstlyAccount, { resolve: firstlyAccountResolve })
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  const lessonMarkdownRef = useRef<HTMLTextAreaElement>(null)
 
   const isDialog = appearance === "dialog"
 
@@ -102,6 +103,7 @@ export function LessonMetadataForm({
           <span className="text-muted-foreground">(optional)</span>
         </label>
         <Textarea
+          ref={lessonMarkdownRef}
           id="lessonMarkdown"
           name="lessonMarkdown"
           defaultValue={lesson.lesson_markdown ?? ""}
