@@ -1,6 +1,7 @@
 import type { Loaded } from "jazz-tools"
 import { assertLoaded } from "jazz-tools"
 
+import type { LessonRow, SessionSkillGraphPayload } from "@/features/firstly/data-types"
 import { coValueId, findSession } from "@/features/firstly/firstly-map"
 import { replaceLessonsAndEdgesFromImport } from "@/features/firstly/jazz-firstly-mutations"
 import type { FirstlyRoot } from "@/features/jazz/schema"
@@ -109,6 +110,24 @@ function parsePayload(raw: unknown):
   }
 
   return { ok: true, lessons, edges }
+}
+
+/** Pretty-printed JSON matching the skill-tree import schema (for preload / round-trip). */
+export function serializeSkillTreeForImport(
+  lessons: LessonRow[],
+  graph: SessionSkillGraphPayload | null,
+): string {
+  const importLessons: ImportLesson[] = lessons.map((l) => ({
+    key: l.id,
+    kind: l.entry_mode === "problem_set" ? "problem" : "concept",
+    title: l.title?.trim() || "Untitled",
+    goalText: l.goal_text?.trim() || "No goal set",
+  }))
+  const edges = (graph?.edges ?? []).map((e) => ({
+    from: e.from_lesson_id,
+    to: e.to_lesson_id,
+  }))
+  return JSON.stringify({ lessons: importLessons, edges }, null, 2)
 }
 
 function nowIso() {

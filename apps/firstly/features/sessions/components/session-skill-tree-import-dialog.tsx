@@ -1,13 +1,20 @@
 "use client"
 
-import { useCallback, useState, useTransition, type FormEvent } from "react"
+import { useCallback, useMemo, useState, useTransition, type FormEvent } from "react"
 
 import { assertLoaded } from "jazz-tools"
 import { useAccount } from "jazz-tools/react"
 
 import { firstlyAccountResolve } from "@/features/firstly/account-resolve"
+import {
+  getLessonsForSessionPayload,
+  getSessionSkillGraphPayload,
+} from "@/features/firstly/jazz-firstly-mutations"
 import { FirstlyAccount } from "@/features/jazz/schema"
-import { applySkillTreeImport } from "@/features/sessions/jazz-skill-tree-import"
+import {
+  applySkillTreeImport,
+  serializeSkillTreeForImport,
+} from "@/features/sessions/jazz-skill-tree-import"
 import {
   Button,
   cn,
@@ -48,9 +55,21 @@ type Props = {
 export function SessionSkillTreeImportDialog({ sessionId, className }: Props) {
   const me = useAccount(FirstlyAccount, { resolve: firstlyAccountResolve })
   const [open, setOpen] = useState(false)
-  const [json, setJson] = useState("")
+  /** When non-null, user has edited; otherwise show derived snapshot. */
+  const [jsonDraft, setJsonDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+
+  const derivedJson = useMemo(() => {
+    if (!open || !me.$isLoaded) return ""
+    assertLoaded(me)
+    return serializeSkillTreeForImport(
+      getLessonsForSessionPayload(me, sessionId),
+      getSessionSkillGraphPayload(me, sessionId),
+    )
+  }, [open, me, sessionId])
+
+  const json = jsonDraft ?? derivedJson
 
   const onSubmit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
@@ -64,7 +83,7 @@ export function SessionSkillTreeImportDialog({ sessionId, className }: Props) {
           return
         }
         setOpen(false)
-        setJson("")
+        setJsonDraft(null)
       })
     },
     [me, sessionId, json],
@@ -72,8 +91,8 @@ export function SessionSkillTreeImportDialog({ sessionId, className }: Props) {
 
   const onOpenChange = useCallback((next: boolean) => {
     setOpen(next)
+    setJsonDraft(null)
     if (!next) {
-      setJson("")
       setError(null)
     }
   }, [])
@@ -98,7 +117,7 @@ export function SessionSkillTreeImportDialog({ sessionId, className }: Props) {
           </Button>
         }
       />
-      <DialogContent className="max-w-lg">
+      <DialogContent className="flex max-h-[min(90dvh,900px)] max-w-lg! flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Import skill tree</DialogTitle>
           <DialogDescription>
@@ -107,14 +126,17 @@ export function SessionSkillTreeImportDialog({ sessionId, className }: Props) {
             all lessons and edges in this session.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <form
+          onSubmit={onSubmit}
+          className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
+        >
           <Textarea
             name="json"
             value={json}
-            onChange={(e) => setJson(e.target.value)}
+            onChange={(e) => setJsonDraft(e.target.value)}
             placeholder='{"lessons":[...],"edges":[...]}'
-            rows={12}
-            className="field-sizing-fixed max-h-[min(60vh,22rem)] min-h-[200px] resize-y overflow-y-auto font-mono text-sm"
+            rows={8}
+            className="min-h-[120px] max-h-[min(55vh,24rem)] flex-1 resize-none overflow-y-auto font-mono text-sm"
             spellCheck={false}
             autoComplete="off"
             aria-label="Skill tree JSON"
