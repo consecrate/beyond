@@ -4,6 +4,8 @@ import { JazzReactProvider } from "jazz-tools/react"
 import { Loader2 } from "lucide-react"
 
 import { getJazzSyncPeer } from "@/features/jazz/env"
+import { JOIN_VIEWER_AUTH_SECRET_STORAGE_KEY } from "@/features/jazz/join-viewer-session"
+import { PlaydeckAccount } from "@/features/jazz/schema"
 
 function JoinJazzFallback() {
   return (
@@ -23,8 +25,9 @@ export default function JoinLayout({
 }) {
   return (
     <JazzReactProvider
-      guestMode
       sync={{ peer: getJazzSyncPeer() }}
+      AccountSchema={PlaydeckAccount}
+      authSecretStorageKey={JOIN_VIEWER_AUTH_SECRET_STORAGE_KEY}
       fallback={<JoinJazzFallback />}
     >
       {children}

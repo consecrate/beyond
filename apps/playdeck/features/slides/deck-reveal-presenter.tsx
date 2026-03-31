@@ -1,14 +1,17 @@
 "use client"
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 
+import type { Loaded } from "jazz-tools"
+
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
+import {
+  aggregatePollCounts,
+  isPollClosed,
+} from "@/features/jazz/live-session-mutations"
+import type { LiveSession } from "@/features/jazz/schema"
+import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { Button, buttonVariants, cn } from "@beyond/design-system"
 import {
   ChevronLeft,
@@ -31,6 +34,10 @@ export type DeckLiveControls = {
   onGoLive: (currentSlideIndex: number) => void | Promise<void>
   onEndLive: () => void | Promise<void>
   onSlideIndexSync?: (index: number) => void
+  /** When live, poll slides show tallies from this CoValue. */
+  liveSession?: Loaded<typeof LiveSession> | null
+  /** Presenter closes voting for a poll by key. */
+  onClosePoll?: (pollKey: string) => void | Promise<void>
 }
 
 export type DeckRevealPresenterProps = {
@@ -42,6 +49,124 @@ export type DeckRevealPresenterProps = {
 }
 
 const LAZY_RADIUS = 2
+
+const REVEAL_WIDTH = 960
+const REVEAL_HEIGHT = 700
+
+export function RevealSlideBody({
+  html,
+  poll,
+  slideIndex,
+  activeIndex,
+}: {
+  html: string
+  poll: RevealSlideModel["poll"]
+  slideIndex: number
+  activeIndex: number
+}) {
+  const show = Math.abs(slideIndex - activeIndex) <= LAZY_RADIUS
+
+  if (poll) {
+    return (
+      <div className="h-0 w-0 overflow-hidden opacity-0" aria-hidden />
+    )
+  }
+
+  if (!show) {
+    return (
+      <div
+        className="flex min-h-[min(70vh,700px)] w-full max-w-4xl items-center justify-center"
+        aria-hidden
+      >
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/40" />
+      </div>
+    )
+  }
+
+  const inner =
+    html.trim() === ""
+      ? '<p class="text-muted-foreground">Empty slide</p>'
+      : html
+
+  return (
+    <div
+      className="prose prose-invert max-h-[min(70vh,700px)] w-full max-w-4xl overflow-auto px-2 text-left prose-headings:font-semibold prose-p:leading-relaxed"
+      dangerouslySetInnerHTML={{ __html: inner }}
+    />
+  )
+}
+
+function GridSlideThumbnail({
+  slide,
+  index,
+  live,
+}: {
+  slide: RevealSlideModel
+  index: number
+  live?: DeckLiveControls
+}) {
+  const poll = slide.poll
+  if (poll) {
+    const liveSession =
+      live?.isActive && live.liveSession ? live.liveSession : null
+    const counts = liveSession
+      ? aggregatePollCounts(liveSession, poll.pollKey, poll.options.length)
+      : Array.from({ length: poll.options.length }, () => 0)
+    const pollClosed = liveSession
+      ? isPollClosed(liveSession, poll.pollKey)
+      : false
+    return (
+      <div
+        className="@container relative w-full overflow-hidden rounded-md border border-border bg-background"
+        style={{ aspectRatio: `${REVEAL_WIDTH} / ${REVEAL_HEIGHT}` }}
+      >
+        <div
+          className="pointer-events-none absolute left-0 top-0 origin-top-left"
+          style={{
+            width: REVEAL_WIDTH,
+            height: REVEAL_HEIGHT,
+            transform: `scale(calc(100cqw / ${REVEAL_WIDTH}px))`,
+          }}
+        >
+          <div className="h-full w-full overflow-hidden p-2">
+            <PollSlideCard
+              layout="card"
+              block={poll}
+              variant={liveSession ? "presenter" : "preview"}
+              counts={counts}
+              myVote={null}
+              name={`grid-poll-${index}`}
+              pollClosed={pollClosed}
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="@container relative w-full overflow-hidden rounded-md border border-border bg-[#0d1117]"
+      style={{ aspectRatio: `${REVEAL_WIDTH} / ${REVEAL_HEIGHT}` }}
+    >
+      <div
+        className="pointer-events-none absolute left-0 top-0 origin-top-left"
+        style={{
+          width: REVEAL_WIDTH,
+          height: REVEAL_HEIGHT,
+          transform: `scale(calc(100cqw / ${REVEAL_WIDTH}px))`,
+        }}
+      >
+        <RevealSlideBody
+          html={slide.html}
+          poll={null}
+          slideIndex={index}
+          activeIndex={index}
+        />
+      </div>
+    </div>
+  )
+}
 
 export function DeckRevealPresenter({
   deckTitle,
@@ -95,7 +220,7 @@ export function DeckRevealPresenter({
   }, [onSlideChanged])
 
   useEffect(() => {
-    if (view !== "slide" || !revealRef.current || numSlides < 1) return
+    if (!revealRef.current || numSlides < 1) return
 
     const el = revealRef.current
     const deck = new Reveal(el, {
@@ -137,7 +262,7 @@ export function DeckRevealPresenter({
       deck.destroy()
       deckApiRef.current = null
     }
-  }, [view, numSlides])
+  }, [numSlides])
 
   useEffect(() => {
     if (view === "slide") {
@@ -297,6 +422,7 @@ export function DeckRevealPresenter({
                       >
                         <RevealSlideBody
                           html={slide.html}
+                          poll={slide.poll}
                           slideIndex={i}
                           activeIndex={activeIndex}
                         />
@@ -307,6 +433,60 @@ export function DeckRevealPresenter({
               </div>
             </div>
 
+            {view === "slide" && slides[activeIndex]?.poll ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
+                    {live?.isActive && live.liveSession ? (
+                      <PollSlideCard
+                        layout="overlay"
+                        block={slides[activeIndex].poll!}
+                        variant="presenter"
+                        counts={aggregatePollCounts(
+                          live.liveSession,
+                          slides[activeIndex].poll!.pollKey,
+                          slides[activeIndex].poll!.options.length,
+                        )}
+                        myVote={null}
+                        name={`present-poll-${activeIndex}`}
+                        pollClosed={isPollClosed(
+                          live.liveSession,
+                          slides[activeIndex].poll!.pollKey,
+                        )}
+                        onClosePoll={
+                          live.onClosePoll
+                            ? () => {
+                                const close = live.onClosePoll
+                                if (close) {
+                                  close(slides[activeIndex].poll!.pollKey)
+                                }
+                              }
+                            : undefined
+                        }
+                      />
+                    ) : (
+                      <PollSlideCard
+                        layout="overlay"
+                        block={slides[activeIndex].poll!}
+                        variant="preview"
+                        counts={Array.from(
+                          {
+                            length: slides[activeIndex].poll!.options.length,
+                          },
+                          () => 0,
+                        )}
+                        myVote={null}
+                        name={`present-poll-${activeIndex}`}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {view === "grid" ? (
               <div className="relative z-10 flex min-h-[50vh] flex-1 flex-col overflow-auto p-4">
                 <div className="mx-auto grid w-full max-w-5xl grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
@@ -314,19 +494,23 @@ export function DeckRevealPresenter({
                     <button
                       key={i}
                       type="button"
+                      aria-label={`Go to slide ${i + 1}`}
                       onClick={() => onGridPickSlide(i)}
                       className={cn(
-                        "flex flex-col rounded-md border bg-card p-3 text-left text-sm transition-colors",
+                        "flex flex-col gap-2 rounded-md border bg-card p-2 text-left text-sm transition-colors",
                         "hover:border-ring/60 hover:bg-muted/40",
                         i === activeIndex && "border-ring ring-1 ring-ring/30",
                       )}
                     >
-                      <span className="tabular-nums text-xs text-muted-foreground">
-                        {i + 1}
-                      </span>
-                      <span className="mt-1 line-clamp-2 font-medium">
-                        {slide.title.trim() || `Slide ${i + 1}`}
-                      </span>
+                      <div className="flex items-start justify-between gap-2 px-0.5">
+                        <span className="tabular-nums text-xs text-muted-foreground">
+                          {i + 1}
+                        </span>
+                        <span className="line-clamp-1 min-w-0 text-xs font-medium">
+                          {slide.title.trim() || `Slide ${i + 1}`}
+                        </span>
+                      </div>
+                      <GridSlideThumbnail slide={slide} index={i} live={live} />
                     </button>
                   ))}
                 </div>
@@ -336,40 +520,5 @@ export function DeckRevealPresenter({
         )}
       </div>
     </div>
-  )
-}
-
-export function RevealSlideBody({
-  html,
-  slideIndex,
-  activeIndex,
-}: {
-  html: string
-  slideIndex: number
-  activeIndex: number
-}) {
-  const show = Math.abs(slideIndex - activeIndex) <= LAZY_RADIUS
-
-  if (!show) {
-    return (
-      <div
-        className="flex min-h-[min(70vh,700px)] w-full max-w-4xl items-center justify-center"
-        aria-hidden
-      >
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/40" />
-      </div>
-    )
-  }
-
-  const inner =
-    html.trim() === ""
-      ? '<p class="text-muted-foreground">Empty slide</p>'
-      : html
-
-  return (
-    <div
-      className="prose prose-invert max-h-[min(70vh,700px)] w-full max-w-4xl overflow-auto px-2 text-left prose-headings:font-semibold prose-p:leading-relaxed"
-      dangerouslySetInnerHTML={{ __html: inner }}
-    />
   )
 }

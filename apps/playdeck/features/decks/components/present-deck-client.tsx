@@ -4,13 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 
 import type { Loaded } from "jazz-tools"
-import { useAccount } from "jazz-tools/react"
 import { assertLoaded } from "jazz-tools"
+import { useAccount } from "jazz-tools/react"
+import { useCoState } from "jazz-tools/react"
 
 import { coValueId, deckSlidesToViews } from "@/features/decks/deck-map"
 import { findDeck } from "@/features/decks/jazz-deck-mutations"
-import { slideMarkdownToSafeHtml } from "@/features/decks/render-slide-markdown"
+import { presenterRevealSlidesFromSources } from "@/features/decks/slide-markdown-document"
 import {
+  closePoll,
   endLiveSession,
   startLiveSession,
   updateLiveSlideIndex,
@@ -47,6 +49,11 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
   const liveSessionRef = useRef<Loaded<typeof LiveSession> | null>(null)
   const joinCodeRef = useRef<string | null>(null)
   const [joinCode, setJoinCode] = useState<string | null>(null)
+  const [liveSessionId, setLiveSessionId] = useState<string | null>(null)
+
+  const liveSessionSub = useCoState(LiveSession, liveSessionId ?? undefined, {
+    resolve: { poll_votes: { $each: true }, closed_poll_keys: true },
+  })
 
   useEffect(() => {
     joinCodeRef.current = joinCode
@@ -60,6 +67,7 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     }
     liveSessionRef.current = null
     joinCodeRef.current = null
+    setLiveSessionId(null)
     if (code) {
       void fetch(
         `/api/live-sessions?code=${encodeURIComponent(code)}`,
@@ -109,6 +117,7 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
       const data = (await res.json()) as { code: string }
       joinCodeRef.current = data.code
       setJoinCode(data.code)
+      setLiveSessionId(sessionId)
     },
     [deckId, me],
   )
@@ -118,6 +127,16 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     if (!session) return
     updateLiveSlideIndex(session, index)
   }, [])
+
+  const handleClosePoll = useCallback(
+    (pollKey: string) => {
+      if (!me.$isLoaded || !liveSessionSub.$isLoaded) return
+      assertLoaded(me)
+      const r = closePoll(me, liveSessionSub, pollKey)
+      if (!r.ok) window.alert(r.error)
+    },
+    [me, liveSessionSub],
+  )
 
   const handleEndLive = useCallback(() => {
     tearDownLiveSession({ keepalive: false })
@@ -160,11 +179,17 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     return <RedirectToDecks />
   }
 
-  const slides = deckSlidesToViews(deck)
-  const slidesForPresentation = slides.map((s) => ({
-    title: s.title,
-    html: slideMarkdownToSafeHtml(s.body),
-  }))
+  const views = deckSlidesToViews(deck)
+  const slidesForPresentation = presenterRevealSlidesFromSources({
+    liveMarkdown:
+      joinCode !== null && liveSessionSub.$isLoaded
+        ? liveSessionSub.markdown
+        : undefined,
+    deckViews: views,
+  })
+
+  const liveSessionResolved =
+    joinCode !== null && liveSessionSub.$isLoaded ? liveSessionSub : null
 
   return (
     <PresentRevealLoader
@@ -178,6 +203,8 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
         onGoLive: handleGoLive,
         onEndLive: handleEndLive,
         onSlideIndexSync: handleSlideIndexSync,
+        liveSession: liveSessionResolved,
+        onClosePoll: handleClosePoll,
       }}
     />
   )

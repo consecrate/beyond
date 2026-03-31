@@ -12,12 +12,22 @@ export const Deck = co.map({
   slides: co.list(DeckSlide),
 })
 
+export const PollVote = co.map({
+  user_id: z.string(),
+  poll_key: z.string(),
+  option_index: z.number(),
+})
+
 /** Public-read live deck snapshot + authoritative slide index for viewers. */
 export const LiveSession = co.map({
   deckTitle: z.string(),
   markdown: z.string(),
   activeSlideIndex: z.number(),
   status: z.union([z.literal("live"), z.literal("ended")]),
+  presenter_account_id: z.string(),
+  poll_votes: co.list(PollVote),
+  /** Poll keys that no longer accept votes (final results). */
+  closed_poll_keys: co.list(z.string()).optional(),
 })
 
 export const PlaydeckRoot = co.map({

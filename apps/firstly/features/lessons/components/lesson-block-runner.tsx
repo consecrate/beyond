@@ -20,33 +20,22 @@ type Props = {
 
 function McqCard({
   block,
-  active,
   state,
   onSelect,
   onSubmit,
-  onContinue,
-  isLastBlock,
   name,
 }: {
   block: Extract<LessonBlock, { type: "mcq" }>
-  active: boolean
   state: McqUiState
   onSelect: (i: number) => void
   onSubmit: () => void
-  onContinue: () => void
-  isLastBlock: boolean
   name: string
 }) {
   const correct = state.submitted && state.selected === block.correctIndex
   const wrong = state.submitted && state.selected != null && state.selected !== block.correctIndex
 
   return (
-    <article
-      className={cn(
-        "rounded-xl border border-border/80 bg-card/40 px-4 py-4",
-        !active && "opacity-95",
-      )}
-    >
+    <article className="rounded-xl border border-border/80 bg-card/40 px-4 py-4">
       <header className="mb-3 flex items-start justify-between gap-2">
         <h2 className="font-display text-base font-semibold tracking-tight text-foreground">
           <LessonMarkdown
@@ -71,7 +60,7 @@ function McqCard({
       <ul className="mb-4 space-y-2">
         {block.options.map((opt, i) => {
           const id = `${name}-opt-${i}`
-          const disabled = state.submitted || !active
+          const disabled = state.submitted
           return (
             <li key={i} className="flex gap-2">
               <input
@@ -98,7 +87,7 @@ function McqCard({
         })}
       </ul>
 
-      {active && !state.submitted ? (
+      {!state.submitted ? (
         <Button
           type="button"
           size="sm"
@@ -124,35 +113,15 @@ function McqCard({
             <span className="font-medium text-foreground">Explain: </span>
             <LessonMarkdown markdown={block.explanation} className="inline [&_p]:mb-0 [&_p]:inline" />
           </div>
-          {active ? (
-            <Button type="button" size="sm" variant="secondary" onClick={onContinue}>
-              {isLastBlock ? "Finish" : "Continue"}
-            </Button>
-          ) : null}
         </div>
       ) : null}
     </article>
   )
 }
 
-function ContentCard({
-  block,
-  active,
-  onNext,
-  showNext,
-}: {
-  block: Extract<LessonBlock, { type: "content" }>
-  active: boolean
-  onNext: () => void
-  showNext: boolean
-}) {
+function ContentCard({ block }: { block: Extract<LessonBlock, { type: "content" }> }) {
   return (
-    <article
-      className={cn(
-        "rounded-xl border border-border/80 bg-card/40 px-4 py-4",
-        !active && "opacity-95",
-      )}
-    >
+    <article className="rounded-xl border border-border/80 bg-card/40 px-4 py-4">
       <header className="mb-3 flex items-start justify-between gap-2">
         {block.title?.trim() ? (
           <h2 className="font-display text-base font-semibold tracking-tight text-foreground">
@@ -175,13 +144,6 @@ function ContentCard({
       {block.markdown.trim() ? (
         <LessonMarkdown markdown={block.markdown} />
       ) : null}
-      {active && showNext ? (
-        <div className="mt-4">
-          <Button type="button" size="sm" onClick={onNext}>
-            Next
-          </Button>
-        </div>
-      ) : null}
     </article>
   )
 }
@@ -191,11 +153,9 @@ export function LessonBlockRunner({
   lessonId,
   className,
 }: Props) {
-  const [revealed, setRevealed] = useState(1)
   const [mcqMap, setMcqMap] = useState<Record<number, McqUiState>>({})
 
   const total = blocks.length
-  const activeIndex = revealed - 1
 
   const setMcq = useCallback((blockIndex: number, patch: Partial<McqUiState>) => {
     setMcqMap((prev) => {
@@ -206,10 +166,6 @@ export function LessonBlockRunner({
       }
     })
   }, [])
-
-  const advance = useCallback(() => {
-    setRevealed((r) => Math.min(r + 1, total))
-  }, [total])
 
   const getMcqState = useCallback(
     (blockIndex: number): McqUiState => {
@@ -224,21 +180,8 @@ export function LessonBlockRunner({
     <div className={cn("space-y-6", className)}>
       <div className="space-y-5">
         {blocks.map((block, index) => {
-          if (index >= revealed) return null
-
-          const active = index === activeIndex
-
           if (block.type === "content") {
-            const showNext = active && index < total - 1
-            return (
-              <ContentCard
-                key={`c-${index}`}
-                block={block}
-                active={active}
-                showNext={showNext}
-                onNext={advance}
-              />
-            )
+            return <ContentCard key={`c-${index}`} block={block} />
           }
 
           const st = getMcqState(index)
@@ -246,17 +189,15 @@ export function LessonBlockRunner({
             <McqCard
               key={`m-${index}`}
               block={block}
-              active={active}
               state={st}
               name={`mcq-${lessonId}-${index}`}
-              isLastBlock={index === total - 1}
-              onSelect={(i) => active && setMcq(index, { selected: i })}
+              onSelect={(i) => {
+                if (st.submitted) return
+                setMcq(index, { selected: i })
+              }}
               onSubmit={() => {
                 if (st.selected == null) return
                 setMcq(index, { submitted: true })
-              }}
-              onContinue={() => {
-                advance()
               }}
             />
           )
@@ -264,13 +205,7 @@ export function LessonBlockRunner({
       </div>
 
       <p className="text-center text-xs text-muted-foreground">
-        Block {Math.min(revealed, total)} of {total}
-        {revealed >= total && blocks[total - 1]?.type === "content" ? " · End of lesson" : null}
-        {revealed >= total &&
-        blocks[total - 1]?.type === "mcq" &&
-        getMcqState(total - 1).submitted ? (
-          <span> · End of lesson</span>
-        ) : null}
+        {total} {total === 1 ? "section" : "sections"}
       </p>
     </div>
   )

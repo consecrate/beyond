@@ -2,8 +2,15 @@ import { describe, expect, it } from "vitest"
 
 import type { DeckSlideView } from "@/features/decks/deck-types"
 import {
+  computePollKey,
+  DEFAULT_POLL_SLIDE_CHUNK,
+  tryParsePollFromSlideBody,
+} from "@/features/decks/parse-slide-poll"
+import {
+  deckSlidesToRevealModels,
   markdownMatchesSlides,
   parseMarkdownDocumentToSlides,
+  presenterRevealSlidesFromSources,
   slidesToMarkdownDocument,
 } from "@/features/decks/slide-markdown-document"
 
@@ -119,5 +126,130 @@ describe("slidesToMarkdownDocument round-trip", () => {
     const out = slidesToMarkdownDocument(viewsFromParsed(parsed))
     expect(out).toMatch(/\n---\n/)
     expect(parseMarkdownDocumentToSlides(out)).toEqual(parsed)
+  })
+})
+
+describe("tryParsePollFromSlideBody", () => {
+  it("parses minimal body without **Poll:**", () => {
+    const b = tryParsePollFromSlideBody(`? Q?
+
+1. A
+2. B
+`)
+    expect(b).not.toBeNull()
+    expect(b?.prompt).toBe("Q?")
+    expect(b?.options).toEqual(["A", "B"])
+  })
+
+  it("parses legacy body with **Poll:**", () => {
+    const b = tryParsePollFromSlideBody(`? Q?
+
+1. A
+2. B
+
+**Poll:**
+`)
+    expect(b).not.toBeNull()
+    expect(b?.options).toEqual(["A", "B"])
+  })
+
+  it("still parses optional ## subtitle", () => {
+    const b = tryParsePollFromSlideBody(`## Custom
+
+? Q?
+
+1. A
+2. B
+`)
+    expect(b).not.toBeNull()
+    expect(b?.title).toBe("Custom")
+  })
+
+  it("rejects trailing content after options", () => {
+    expect(
+      tryParsePollFromSlideBody(`? Q?
+
+1. A
+2. B
+
+oops extra`),
+    ).toBeNull()
+  })
+})
+
+describe("deckSlidesToRevealModels + poll", () => {
+  it("sets poll and empty html for a poll slide body", () => {
+    const md = `${DEFAULT_POLL_SLIDE_CHUNK}\n`
+    const parsed = parseMarkdownDocumentToSlides(md)
+    const models = deckSlidesToRevealModels(parsed)
+    expect(models).toHaveLength(1)
+    expect(models[0].poll).not.toBeNull()
+    expect(models[0].poll?.options.length).toBeGreaterThanOrEqual(2)
+    expect(models[0].html).toBe("")
+  })
+
+  it("merges slide # title into poll and pollKey when body has no ##", () => {
+    const md = `# Poll
+
+? Q?
+
+1. A
+2. B
+`
+    const models = deckSlidesToRevealModels(parseMarkdownDocumentToSlides(md))
+    expect(models[0].poll?.title).toBe("Poll")
+    expect(models[0].poll?.pollKey).toBe(
+      computePollKey({ title: "Poll", prompt: "Q?", options: ["A", "B"] }),
+    )
+  })
+
+  it("leaves html for non-poll slides", () => {
+    const md = `# Hi\n\nSome **text**.\n`
+    const models = deckSlidesToRevealModels(parseMarkdownDocumentToSlides(md))
+    expect(models[0].poll).toBeNull()
+    expect(models[0].html).toContain("text")
+  })
+})
+
+describe("presenterRevealSlidesFromSources", () => {
+  it("matches deck-only mapping when live markdown is omitted", () => {
+    const md = `# Poll\n\n? Q?\n\n1. A\n2. B\n`
+    const views = viewsFromParsed(parseMarkdownDocumentToSlides(md))
+    const fromHelper = presenterRevealSlidesFromSources({
+      liveMarkdown: undefined,
+      deckViews: views,
+    })
+    const direct = deckSlidesToRevealModels(parseMarkdownDocumentToSlides(md))
+    expect(fromHelper).toEqual(direct)
+  })
+
+  it("falls back to deck when live markdown is empty or whitespace", () => {
+    const md = `# T\n\nbody\n`
+    const views = viewsFromParsed(parseMarkdownDocumentToSlides(md))
+    const a = presenterRevealSlidesFromSources({ liveMarkdown: "", deckViews: views })
+    const b = presenterRevealSlidesFromSources({
+      liveMarkdown: "   \n",
+      deckViews: views,
+    })
+    const c = presenterRevealSlidesFromSources({ liveMarkdown: undefined, deckViews: views })
+    expect(a).toEqual(c)
+    expect(b).toEqual(c)
+  })
+
+  it("uses live markdown for poll identity when deck has diverged", () => {
+    const liveMd = `# Poll\n\n? Old?\n\n1. A\n2. B\n`
+    const deckMd = `# Poll\n\n? New?\n\n1. A\n2. B\n`
+    const deckViews = viewsFromParsed(parseMarkdownDocumentToSlides(deckMd))
+    const fromLive = presenterRevealSlidesFromSources({
+      liveMarkdown: liveMd,
+      deckViews,
+    })
+    const fromDeckOnly = presenterRevealSlidesFromSources({
+      liveMarkdown: undefined,
+      deckViews,
+    })
+    expect(fromLive[0].poll?.prompt).toBe("Old?")
+    expect(fromDeckOnly[0].poll?.prompt).toBe("New?")
+    expect(fromLive[0].poll?.pollKey).not.toBe(fromDeckOnly[0].poll?.pollKey)
   })
 })

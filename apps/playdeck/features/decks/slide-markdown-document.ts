@@ -1,4 +1,8 @@
 import type { DeckSlideView } from "@/features/decks/deck-types"
+import {
+  computePollKey,
+  tryParsePollFromSlideBody,
+} from "@/features/decks/parse-slide-poll"
 import { slideMarkdownToSafeHtml } from "@/features/decks/render-slide-markdown"
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 
@@ -77,12 +81,52 @@ export function markdownMatchesSlides(
   return true
 }
 
-/** Same mapping as Present mode: HTML from body Markdown; title for grid labels. */
+/**
+ * Presenter: while live, use frozen `LiveSession.markdown` so `pollKey` matches stored
+ * `poll_votes`; otherwise use the current deck serialized to markdown.
+ */
+export function presenterRevealSlidesFromSources(args: {
+  liveMarkdown: string | null | undefined
+  deckViews: DeckSlideView[]
+}): RevealSlideModel[] {
+  const { liveMarkdown, deckViews } = args
+  const md =
+    typeof liveMarkdown === "string" && liveMarkdown.trim() !== ""
+      ? liveMarkdown
+      : slidesToMarkdownDocument(deckViews)
+  return deckSlidesToRevealModels(parseMarkdownDocumentToSlides(md))
+}
+
+/** Same mapping as Present mode: HTML from body Markdown; poll slides use `poll` and empty `html`. */
 export function deckSlidesToRevealModels(
   slides: ParsedSlide[],
 ): RevealSlideModel[] {
-  return slides.map((s) => ({
-    title: s.title,
-    html: slideMarkdownToSafeHtml(s.body),
-  }))
+  return slides.map((s) => {
+    const raw = tryParsePollFromSlideBody(s.body)
+    if (!raw) {
+      return {
+        title: s.title,
+        html: slideMarkdownToSafeHtml(s.body),
+        poll: null,
+      }
+    }
+    const mergedTitle =
+      (raw.title?.trim() || s.title.trim()) || undefined
+    const poll = {
+      type: "poll" as const,
+      prompt: raw.prompt,
+      options: raw.options,
+      pollKey: computePollKey({
+        title: mergedTitle ?? "",
+        prompt: raw.prompt,
+        options: raw.options,
+      }),
+      ...(mergedTitle ? { title: mergedTitle } : {}),
+    }
+    return {
+      title: s.title,
+      html: "",
+      poll,
+    }
+  })
 }

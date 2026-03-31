@@ -1,13 +1,24 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 
-import { cn } from "@beyond/design-system"
+import type { Loaded } from "jazz-tools"
+import { assertLoaded } from "jazz-tools"
+import { useAccount } from "jazz-tools/react"
+
 import Reveal from "reveal.js"
 import type { RevealApi } from "reveal.js"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
+import {
+  aggregatePollCounts,
+  isPollClosed,
+  myPollVote,
+  upsertPollVote,
+} from "@/features/jazz/live-session-mutations"
+import { PlaydeckAccount, type LiveSession } from "@/features/jazz/schema"
 import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
+import { PollSlideCard } from "@/features/slides/poll-slide-card"
 
 import "reveal.js/reveal.css"
 import "reveal.js/theme/black.css"
@@ -18,7 +29,7 @@ export type LiveRevealFollowerProps = {
   deckTitle: string
   slides: RevealSlideModel[]
   activeSlideIndex: number
-  status: "live" | "ended"
+  liveSession: Loaded<typeof LiveSession>
 }
 
 export function LiveRevealFollower({
@@ -26,8 +37,11 @@ export function LiveRevealFollower({
   deckTitle,
   slides,
   activeSlideIndex,
-  status,
+  liveSession,
 }: LiveRevealFollowerProps) {
+  const me = useAccount(PlaydeckAccount)
+  const [voteError, setVoteError] = useState<string | null>(null)
+  const [votePending, startVote] = useTransition()
   const [loadError, setLoadError] = useState<string | null>(null)
   /** Must match Reveal's current slide for RevealSlideBody lazy window (not only Jazz index). */
   const [revealIndex, setRevealIndex] = useState(0)
@@ -37,6 +51,8 @@ export function LiveRevealFollower({
   const deckApiRef = useRef<RevealApi | null>(null)
   const activeSlideIndexRef = useRef(activeSlideIndex)
   const numSlides = slides.length
+
+  const userId = me.$isLoaded ? me.$jazz.id : ""
 
   useEffect(() => {
     activeSlideIndexRef.current = activeSlideIndex
@@ -147,48 +163,92 @@ export function LiveRevealFollower({
         {loadError ? (
           <p className="p-6 text-center text-sm text-destructive">{loadError}</p>
         ) : (
-          <div
-            key={sessionId}
-            className="absolute inset-0 z-0 flex flex-col"
-          >
+          <>
             <div
-              ref={viewportRef}
-              className="reveal-viewport h-full min-h-0 w-full flex-1"
+              key={sessionId}
+              className="absolute inset-0 z-0 flex flex-col"
             >
-              <div ref={revealRef} className="reveal h-full min-h-[50vh]">
-                <div className="slides">
-                  {slides.map((slide, i) => (
-                    <section
-                      key={i}
-                      className="flex items-center justify-center !p-4"
-                      data-background-color="#0d1117"
-                    >
-                      <RevealSlideBody
-                        html={slide.html}
-                        slideIndex={i}
-                        activeIndex={revealIndex}
-                      />
-                    </section>
-                  ))}
+              <div
+                ref={viewportRef}
+                className="reveal-viewport h-full min-h-0 w-full flex-1"
+              >
+                <div ref={revealRef} className="reveal h-full min-h-[50vh]">
+                  <div className="slides">
+                    {slides.map((slide, i) => (
+                      <section
+                        key={i}
+                        className="flex items-center justify-center !p-4"
+                        data-background-color="#0d1117"
+                      >
+                        <RevealSlideBody
+                          html={slide.html}
+                          poll={slide.poll}
+                          slideIndex={i}
+                          activeIndex={revealIndex}
+                        />
+                      </section>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+
+            {slides[revealIndex]?.poll ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
+                    <PollSlideCard
+                      layout="overlay"
+                      block={slides[revealIndex].poll!}
+                      variant="audience"
+                      counts={aggregatePollCounts(
+                        liveSession,
+                        slides[revealIndex].poll!.pollKey,
+                        slides[revealIndex].poll!.options.length,
+                      )}
+                      myVote={myPollVote(
+                        liveSession,
+                        userId,
+                        slides[revealIndex].poll!.pollKey,
+                      )}
+                      pollClosed={isPollClosed(
+                        liveSession,
+                        slides[revealIndex].poll!.pollKey,
+                      )}
+                      name={`join-poll-${sessionId}-${revealIndex}`}
+                      voteError={voteError}
+                      votePending={votePending}
+                      voteAccountReady={me.$isLoaded}
+                      onVote={(optionIndex) => {
+                        setVoteError(null)
+                        startVote(() => {
+                          if (!me.$isLoaded) {
+                            setVoteError(
+                              "Still connecting. Try again in a moment.",
+                            )
+                            return
+                          }
+                          assertLoaded(me)
+                          const r = upsertPollVote(me, liveSession, {
+                            pollKey: slides[revealIndex].poll!.pollKey,
+                            optionIndex,
+                            optionCount:
+                              slides[revealIndex].poll!.options.length,
+                          })
+                          if (!r.ok) setVoteError(r.error)
+                        })
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
-
-      {status === "ended" ? (
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-0 z-20 flex items-center justify-center",
-            "bg-background/80 backdrop-blur-sm",
-          )}
-        >
-          <p className="rounded-md border border-border bg-card px-4 py-3 text-sm font-medium shadow-lg">
-            This live session has ended.
-          </p>
-        </div>
-      ) : null}
     </div>
   )
 }

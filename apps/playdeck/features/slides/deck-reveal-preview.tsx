@@ -9,15 +9,16 @@ import {
 } from "react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
+import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
+import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { Button, cn } from "@beyond/design-system"
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import Reveal from "reveal.js"
 import type { RevealApi } from "reveal.js"
 
 import "reveal.js/reveal.css"
 import "reveal.js/theme/black.css"
 
-const LAZY_RADIUS = 2
 const SYNC_DEBOUNCE_MS = 80
 
 export type DeckRevealPreviewProps = {
@@ -170,62 +171,55 @@ export function DeckRevealPreview({
         {loadError ? (
           <p className="p-6 text-center text-sm text-destructive">{loadError}</p>
         ) : (
-          <div className="reveal-viewport h-full min-h-0 w-full">
-            <div ref={revealRef} className="reveal h-full min-h-[50vh]">
-              <div className="slides">
-                {slides.map((slide, i) => (
-                  <section
-                    key={i}
-                        className="flex items-center justify-center p-4!"
-                    data-background-color="#0d1117"
-                  >
-                    <RevealSlideBody
-                      html={slide.html}
-                      slideIndex={i}
-                      activeIndex={activeIndex}
-                    />
-                  </section>
-                ))}
+          <>
+            <div className="reveal-viewport h-full min-h-0 w-full">
+              <div ref={revealRef} className="reveal h-full min-h-[50vh]">
+                <div className="slides">
+                  {slides.map((slide, i) => (
+                    <section
+                      key={i}
+                      className="flex items-center justify-center !p-4"
+                      data-background-color="#0d1117"
+                    >
+                      <RevealSlideBody
+                        html={slide.html}
+                        poll={slide.poll}
+                        slideIndex={i}
+                        activeIndex={activeIndex}
+                      />
+                    </section>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+
+            {slides[activeIndex]?.poll ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
+                    <PollSlideCard
+                      layout="overlay"
+                      block={slides[activeIndex].poll!}
+                      variant="preview"
+                      counts={Array.from(
+                        {
+                          length: slides[activeIndex].poll!.options.length,
+                        },
+                        () => 0,
+                      )}
+                      myVote={null}
+                      name={`preview-poll-${activeIndex}`}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>
-  )
-}
-
-function RevealSlideBody({
-  html,
-  slideIndex,
-  activeIndex,
-}: {
-  html: string
-  slideIndex: number
-  activeIndex: number
-}) {
-  const show = Math.abs(slideIndex - activeIndex) <= LAZY_RADIUS
-
-  if (!show) {
-    return (
-      <div
-        className="flex min-h-[min(70vh,700px)] w-full max-w-4xl items-center justify-center"
-        aria-hidden
-      >
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/40" />
-      </div>
-    )
-  }
-
-  const inner =
-    html.trim() === ""
-      ? '<p class="text-muted-foreground">Empty slide</p>'
-      : html
-
-  return (
-    <div
-      className="prose prose-invert max-h-[min(70vh,700px)] w-full max-w-4xl overflow-auto px-2 text-left prose-headings:font-semibold prose-p:leading-relaxed"
-      dangerouslySetInnerHTML={{ __html: inner }}
-    />
   )
 }
