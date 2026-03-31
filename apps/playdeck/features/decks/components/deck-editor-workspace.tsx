@@ -15,6 +15,7 @@ import { PlaydeckAccount } from "@/features/jazz/schema"
 import { replaceSlidesFromMarkdown } from "@/features/decks/jazz-deck-mutations"
 import type { DeckSlideView } from "@/features/decks/deck-types"
 import { appendPollSlideMarkdown } from "@/features/decks/parse-slide-poll"
+import { appendQuestionSlideMarkdown } from "@/features/decks/parse-slide-question"
 import {
   deckSlidesToRevealModels,
   markdownMatchesSlides,
@@ -125,7 +126,12 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
   const slidesContentKey = useMemo(
     () =>
       JSON.stringify(
-        revealModels.map((s) => [s.html, s.poll?.pollKey ?? null]),
+        revealModels.map((s) => [
+          s.html,
+          s.poll?.pollKey ?? null,
+          s.question?.questionKey ?? null,
+          s.interactiveError?.message ?? null,
+        ]),
       ),
     [revealModels],
   )
@@ -175,6 +181,14 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
           <p className="text-sm text-muted-foreground">{statusMessage}</p>
         )}
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setMarkdown((m) => appendQuestionSlideMarkdown(m))}
+          >
+            Add question slide
+          </Button>
           <Button
             type="button"
             variant="outline"

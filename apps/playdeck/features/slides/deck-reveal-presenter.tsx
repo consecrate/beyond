@@ -8,10 +8,15 @@ import type { Loaded } from "jazz-tools"
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
   aggregatePollCounts,
+  aggregateQuestionCounts,
+  countQuestionAnswers,
   isPollClosed,
+  questionStatus,
 } from "@/features/jazz/live-session-mutations"
 import type { LiveSession } from "@/features/jazz/schema"
+import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
+import { QuestionSlideCard } from "@/features/slides/question-slide-card"
 import { Button, buttonVariants, cn } from "@beyond/design-system"
 import {
   ChevronLeft,
@@ -38,6 +43,8 @@ export type DeckLiveControls = {
   liveSession?: Loaded<typeof LiveSession> | null
   /** Presenter closes voting for a poll by key. */
   onClosePoll?: (pollKey: string) => void | Promise<void>
+  onStartQuestion?: (questionKey: string) => void | Promise<void>
+  onStopQuestion?: (questionKey: string) => void | Promise<void>
 }
 
 export type DeckRevealPresenterProps = {
@@ -54,19 +61,17 @@ const REVEAL_WIDTH = 960
 const REVEAL_HEIGHT = 700
 
 export function RevealSlideBody({
-  html,
-  poll,
+  slide,
   slideIndex,
   activeIndex,
 }: {
-  html: string
-  poll: RevealSlideModel["poll"]
+  slide: RevealSlideModel
   slideIndex: number
   activeIndex: number
 }) {
   const show = Math.abs(slideIndex - activeIndex) <= LAZY_RADIUS
 
-  if (poll) {
+  if (slide.poll || slide.question || slide.interactiveError) {
     return (
       <div className="h-0 w-0 overflow-hidden opacity-0" aria-hidden />
     )
@@ -84,9 +89,9 @@ export function RevealSlideBody({
   }
 
   const inner =
-    html.trim() === ""
+    slide.html.trim() === ""
       ? '<p class="text-muted-foreground">Empty slide</p>'
-      : html
+      : slide.html
 
   return (
     <div
@@ -105,6 +110,79 @@ function GridSlideThumbnail({
   index: number
   live?: DeckLiveControls
 }) {
+  if (slide.interactiveError) {
+    return (
+      <div
+        className="@container relative w-full overflow-hidden rounded-md border border-border bg-background"
+        style={{ aspectRatio: `${REVEAL_WIDTH} / ${REVEAL_HEIGHT}` }}
+      >
+        <div
+          className="pointer-events-none absolute left-0 top-0 origin-top-left"
+          style={{
+            width: REVEAL_WIDTH,
+            height: REVEAL_HEIGHT,
+            transform: `scale(calc(100cqw / ${REVEAL_WIDTH}px))`,
+          }}
+        >
+          <div className="h-full w-full overflow-hidden p-2">
+            <InteractiveErrorCard
+              layout="card"
+              title={slide.title}
+              message={slide.interactiveError.message}
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (slide.question) {
+    const liveSession =
+      live?.isActive && live.liveSession ? live.liveSession : null
+    const status = liveSession
+      ? questionStatus(liveSession, slide.question.questionKey)
+      : "idle"
+    const answeredCount = liveSession
+      ? countQuestionAnswers(liveSession, slide.question.questionKey)
+      : 0
+    const counts =
+      liveSession && status === "revealed"
+        ? aggregateQuestionCounts(
+            liveSession,
+            slide.question.questionKey,
+            slide.question.options.length,
+          )
+        : Array.from({ length: slide.question.options.length }, () => 0)
+
+    return (
+      <div
+        className="@container relative w-full overflow-hidden rounded-md border border-border bg-background"
+        style={{ aspectRatio: `${REVEAL_WIDTH} / ${REVEAL_HEIGHT}` }}
+      >
+        <div
+          className="pointer-events-none absolute left-0 top-0 origin-top-left"
+          style={{
+            width: REVEAL_WIDTH,
+            height: REVEAL_HEIGHT,
+            transform: `scale(calc(100cqw / ${REVEAL_WIDTH}px))`,
+          }}
+        >
+          <div className="h-full w-full overflow-hidden p-2">
+            <QuestionSlideCard
+              layout="card"
+              block={slide.question}
+              variant={liveSession ? "presenter" : "preview"}
+              state={status}
+              counts={counts}
+              answeredCount={answeredCount}
+              myAnswer={null}
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const poll = slide.poll
   if (poll) {
     const liveSession =
@@ -158,8 +236,7 @@ function GridSlideThumbnail({
         }}
       >
         <RevealSlideBody
-          html={slide.html}
-          poll={null}
+          slide={{ ...slide, poll: null, question: null, interactiveError: null }}
           slideIndex={index}
           activeIndex={index}
         />
@@ -421,8 +498,7 @@ export function DeckRevealPresenter({
                         data-background-color="#0d1117"
                       >
                         <RevealSlideBody
-                          html={slide.html}
-                          poll={slide.poll}
+                          slide={slide}
                           slideIndex={i}
                           activeIndex={activeIndex}
                         />
@@ -432,6 +508,23 @@ export function DeckRevealPresenter({
                 </div>
               </div>
             </div>
+
+            {view === "slide" && slides[activeIndex]?.interactiveError ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
+                    <InteractiveErrorCard
+                      layout="overlay"
+                      title={slides[activeIndex].title}
+                      message={slides[activeIndex].interactiveError!.message}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {view === "slide" && slides[activeIndex]?.poll ? (
               <div
@@ -480,6 +573,82 @@ export function DeckRevealPresenter({
                         )}
                         myVote={null}
                         name={`present-poll-${activeIndex}`}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {view === "slide" && slides[activeIndex]?.question ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
+                    {live?.isActive && live.liveSession ? (
+                      <QuestionSlideCard
+                        layout="overlay"
+                        block={slides[activeIndex].question!}
+                        variant="presenter"
+                        state={questionStatus(
+                          live.liveSession,
+                          slides[activeIndex].question!.questionKey,
+                        )}
+                        counts={
+                          questionStatus(
+                            live.liveSession,
+                            slides[activeIndex].question!.questionKey,
+                          ) === "revealed"
+                            ? aggregateQuestionCounts(
+                                live.liveSession,
+                                slides[activeIndex].question!.questionKey,
+                                slides[activeIndex].question!.options.length,
+                              )
+                            : Array.from(
+                                {
+                                  length: slides[activeIndex].question!.options.length,
+                                },
+                                () => 0,
+                              )
+                        }
+                        answeredCount={countQuestionAnswers(
+                          live.liveSession,
+                          slides[activeIndex].question!.questionKey,
+                        )}
+                        myAnswer={null}
+                        onStart={
+                          live.onStartQuestion
+                            ? () =>
+                                void live.onStartQuestion?.(
+                                  slides[activeIndex].question!.questionKey,
+                                )
+                            : undefined
+                        }
+                        onStop={
+                          live.onStopQuestion
+                            ? () =>
+                                void live.onStopQuestion?.(
+                                  slides[activeIndex].question!.questionKey,
+                                )
+                            : undefined
+                        }
+                      />
+                    ) : (
+                      <QuestionSlideCard
+                        layout="overlay"
+                        block={slides[activeIndex].question!}
+                        variant="preview"
+                        state="idle"
+                        counts={Array.from(
+                          {
+                            length: slides[activeIndex].question!.options.length,
+                          },
+                          () => 0,
+                        )}
+                        answeredCount={0}
+                        myAnswer={null}
                       />
                     )}
                   </div>

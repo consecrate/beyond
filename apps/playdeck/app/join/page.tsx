@@ -38,7 +38,12 @@ function JoinLiveSessionView({
   onReturnToCodeEntry: () => void
 }) {
   const live = useCoState(LiveSession, sessionId, {
-    resolve: { poll_votes: { $each: true }, closed_poll_keys: true },
+    resolve: {
+      poll_votes: { $each: true },
+      closed_poll_keys: true,
+      question_submissions: { $each: true },
+      question_states: { $each: true },
+    },
   })
 
   if (!live.$isLoaded) {

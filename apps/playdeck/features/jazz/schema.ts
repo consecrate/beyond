@@ -18,6 +18,17 @@ export const PollVote = co.map({
   option_index: z.number(),
 })
 
+export const QuestionSubmission = co.map({
+  user_id: z.string(),
+  question_key: z.string(),
+  option_index: z.number(),
+})
+
+export const QuestionState = co.map({
+  question_key: z.string(),
+  status: z.union([z.literal("idle"), z.literal("open"), z.literal("revealed")]),
+})
+
 /** Public-read live deck snapshot + authoritative slide index for viewers. */
 export const LiveSession = co.map({
   deckTitle: z.string(),
@@ -28,6 +39,8 @@ export const LiveSession = co.map({
   poll_votes: co.list(PollVote),
   /** Poll keys that no longer accept votes (final results). */
   closed_poll_keys: co.list(z.string()).optional(),
+  question_submissions: co.list(QuestionSubmission).optional(),
+  question_states: co.list(QuestionState).optional(),
 })
 
 export const PlaydeckRoot = co.map({

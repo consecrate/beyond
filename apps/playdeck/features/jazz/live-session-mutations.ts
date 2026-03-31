@@ -6,7 +6,16 @@ import {
   parseMarkdownDocumentToSlides,
   slidesToMarkdownDocument,
 } from "@/features/decks/slide-markdown-document"
-import { Deck, LiveSession, PlaydeckAccount, PollVote } from "@/features/jazz/schema"
+import {
+  Deck,
+  LiveSession,
+  PlaydeckAccount,
+  PollVote,
+  QuestionState,
+  QuestionSubmission,
+} from "@/features/jazz/schema"
+
+export type QuestionLiveStatus = "idle" | "open" | "revealed"
 
 export function startLiveSession(
   me: Loaded<typeof PlaydeckAccount>,
@@ -36,6 +45,8 @@ export function startLiveSession(
       presenter_account_id: me.$jazz.id,
       poll_votes: co.list(PollVote).create([], g),
       closed_poll_keys: co.list(z.string()).create([], g),
+      question_submissions: co.list(QuestionSubmission).create([], g),
+      question_states: co.list(QuestionState).create([], g),
     },
     g,
   )
@@ -64,6 +75,57 @@ function ensureClosedPollKeysList(liveSession: Loaded<typeof LiveSession>): void
       co.list(z.string()).create([], liveSession.$jazz.owner),
     )
   }
+}
+
+function ensureQuestionCollections(liveSession: Loaded<typeof LiveSession>): void {
+  if (!liveSession.$jazz.has("question_submissions")) {
+    liveSession.$jazz.set(
+      "question_submissions",
+      co.list(QuestionSubmission).create([], liveSession.$jazz.owner),
+    )
+  }
+
+  if (!liveSession.$jazz.has("question_states")) {
+    liveSession.$jazz.set(
+      "question_states",
+      co.list(QuestionState).create([], liveSession.$jazz.owner),
+    )
+  }
+}
+
+function questionStatesList(
+  liveSession: Loaded<typeof LiveSession>,
+) {
+  ensureQuestionCollections(liveSession)
+  const states = liveSession.question_states
+  if (states == null) return null
+  assertLoaded(states)
+  return states
+}
+
+function questionSubmissionsList(
+  liveSession: Loaded<typeof LiveSession>,
+) {
+  ensureQuestionCollections(liveSession)
+  const submissions = liveSession.question_submissions
+  if (submissions == null) return null
+  assertLoaded(submissions)
+  return submissions
+}
+
+function findQuestionStateEntry(
+  liveSession: Loaded<typeof LiveSession>,
+  questionKey: string,
+): Loaded<typeof QuestionState> | null {
+  const states = questionStatesList(liveSession)
+  if (!states) return null
+  for (const entry of states) {
+    assertLoaded(entry)
+    if (entry.question_key === questionKey) {
+      return entry
+    }
+  }
+  return null
 }
 
 export function isPollClosed(
@@ -207,4 +269,206 @@ export function myPollVote(
     }
   }
   return null
+}
+
+export function questionStatus(
+  liveSession: Loaded<typeof LiveSession> | null,
+  questionKey: string,
+): QuestionLiveStatus {
+  if (!liveSession) return "idle"
+  const entry = findQuestionStateEntry(liveSession, questionKey)
+  return entry?.status ?? "idle"
+}
+
+export function hasAnotherOpenQuestion(
+  liveSession: Loaded<typeof LiveSession> | null,
+  questionKey?: string,
+): boolean {
+  if (!liveSession) return false
+  const states = questionStatesList(liveSession)
+  if (!states) return false
+  for (const entry of states) {
+    assertLoaded(entry)
+    if (entry.status !== "open") continue
+    if (questionKey && entry.question_key === questionKey) continue
+    return true
+  }
+  return false
+}
+
+export function startQuestion(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  questionKey: string,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (me.$jazz.id !== liveSession.presenter_account_id) {
+    return { ok: false, error: "Only the presenter can start a question." }
+  }
+
+  if (hasAnotherOpenQuestion(liveSession, questionKey)) {
+    return {
+      ok: false,
+      error: "Another question is already open. Stop it before starting a new one.",
+    }
+  }
+
+  const existing = findQuestionStateEntry(liveSession, questionKey)
+  if (existing?.status === "revealed") {
+    return {
+      ok: false,
+      error: "This question has already been revealed.",
+    }
+  }
+
+  if (existing) {
+    existing.$jazz.applyDiff({ status: "open" })
+    return { ok: true }
+  }
+
+  const states = questionStatesList(liveSession)
+  if (!states) {
+    return { ok: false, error: "Could not update question state." }
+  }
+
+  states.$jazz.push(
+    QuestionState.create(
+      { question_key: questionKey, status: "open" },
+      liveSession.$jazz.owner,
+    ),
+  )
+  return { ok: true }
+}
+
+export function stopQuestion(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  questionKey: string,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (me.$jazz.id !== liveSession.presenter_account_id) {
+    return { ok: false, error: "Only the presenter can stop a question." }
+  }
+
+  const existing = findQuestionStateEntry(liveSession, questionKey)
+  if (!existing) {
+    return { ok: false, error: "This question has not been started yet." }
+  }
+
+  if (existing.status === "revealed") {
+    return { ok: true }
+  }
+
+  existing.$jazz.applyDiff({ status: "revealed" })
+  return { ok: true }
+}
+
+export function submitQuestionAnswer(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  args: { questionKey: string; optionIndex: number; optionCount: number },
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (me.$jazz.id === liveSession.presenter_account_id) {
+    return { ok: false, error: "Presenters cannot answer their own questions." }
+  }
+
+  if (questionStatus(liveSession, args.questionKey) !== "open") {
+    return { ok: false, error: "This question is not accepting answers right now." }
+  }
+
+  if (
+    !Number.isInteger(args.optionIndex) ||
+    args.optionIndex < 0 ||
+    args.optionIndex >= args.optionCount
+  ) {
+    return { ok: false, error: "Invalid option." }
+  }
+
+  const submissions = questionSubmissionsList(liveSession)
+  if (!submissions) {
+    return { ok: false, error: "Could not save your answer." }
+  }
+
+  for (const entry of submissions) {
+    assertLoaded(entry)
+    if (entry.user_id === me.$jazz.id && entry.question_key === args.questionKey) {
+      return { ok: false, error: "You have already answered this question." }
+    }
+  }
+
+  submissions.$jazz.push(
+    QuestionSubmission.create(
+      {
+        user_id: me.$jazz.id,
+        question_key: args.questionKey,
+        option_index: args.optionIndex,
+      },
+      liveSession.$jazz.owner,
+    ),
+  )
+
+  return { ok: true }
+}
+
+export function myQuestionAnswer(
+  liveSession: Loaded<typeof LiveSession> | null,
+  userId: string,
+  questionKey: string,
+): number | null {
+  if (!liveSession || !liveSession.$jazz.has("question_submissions")) return null
+  const submissions = liveSession.question_submissions
+  if (submissions == null) return null
+  assertLoaded(submissions)
+  for (const entry of submissions) {
+    assertLoaded(entry)
+    if (entry.user_id === userId && entry.question_key === questionKey) {
+      return entry.option_index
+    }
+  }
+  return null
+}
+
+export function countQuestionAnswers(
+  liveSession: Loaded<typeof LiveSession> | null,
+  questionKey: string,
+): number {
+  if (!liveSession || !liveSession.$jazz.has("question_submissions")) return 0
+  const submissions = liveSession.question_submissions
+  if (submissions == null) return 0
+  assertLoaded(submissions)
+
+  const users = new Set<string>()
+  for (const entry of submissions) {
+    assertLoaded(entry)
+    if (entry.question_key === questionKey) {
+      users.add(entry.user_id)
+    }
+  }
+  return users.size
+}
+
+export function aggregateQuestionCounts(
+  liveSession: Loaded<typeof LiveSession> | null,
+  questionKey: string,
+  optionCount: number,
+): number[] {
+  const counts = Array.from({ length: optionCount }, () => 0)
+  if (!liveSession || !liveSession.$jazz.has("question_submissions")) return counts
+  const submissions = liveSession.question_submissions
+  if (submissions == null) return counts
+  assertLoaded(submissions)
+  for (const entry of submissions) {
+    assertLoaded(entry)
+    if (entry.question_key !== questionKey) continue
+    const i = entry.option_index
+    if (i >= 0 && i < optionCount) counts[i]++
+  }
+  return counts
 }
