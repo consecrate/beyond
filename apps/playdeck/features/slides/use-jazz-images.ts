@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { ImageDefinition } from "jazz-tools"
 import { loadImageBySize } from "jazz-tools/media"
 import type { Loaded } from "jazz-tools"
 import type { PlaydeckAccount } from "@/features/jazz/schema"
@@ -19,8 +18,12 @@ const REVEAL_HEIGHT = 700
 export function useJazzImages(
   containerRef: React.RefObject<HTMLElement | null>,
   me: Loaded<typeof PlaydeckAccount> | null | undefined,
+  /**
+   * Pass a content-derived key (e.g. the HTML string being rendered) so the
+   * hook re-runs when the rendered HTML changes and new jazz images appear.
+   */
+  contentKey?: string,
 ) {
-  // Track object URLs for cleanup
   const objectUrlsRef = useRef<string[]>([])
 
   useEffect(() => {
@@ -45,33 +48,9 @@ export function useJazzImages(
         if (!id) continue
 
         try {
-          // Load ImageDefinition — resolves with full CoValue including progressive sizes
-          const settled = await ImageDefinition.load(id, {
-            resolve: { original: true },
-          })
-
-          if (cancelled) break
-          // Settled<T> = T | Inaccessible<T>; guard on $isLoaded to narrow to T
-          if (!settled || !settled.$isLoaded) {
-            img.classList.add("jazz-image--failed")
-            continue
-          }
-
-          // Now narrowed to the loaded ImageDefinition shape
-          const imageDef = settled
-
-          // Show blur placeholder immediately while full res loads
-          if (imageDef.placeholderDataURL) {
-            img.src = imageDef.placeholderDataURL
-          }
-
-          // Load best resolution for Reveal.js viewport (960×700)
-          // Cast required: loadImageBySize expects ImageDefinition (type alias) not Settled<...>
-          const result = await loadImageBySize(
-            imageDef as unknown as import("jazz-tools").ImageDefinition,
-            REVEAL_WIDTH,
-            REVEAL_HEIGHT,
-          )
+          // loadImageBySize accepts a CoValue ID string directly —
+          // no need to call ImageDefinition.load() first.
+          const result = await loadImageBySize(id, REVEAL_WIDTH, REVEAL_HEIGHT)
 
           if (cancelled) break
 
@@ -102,13 +81,11 @@ export function useJazzImages(
 
     return () => {
       cancelled = true
-      // Revoke all object URLs created in this cycle
       for (const url of objectUrlsRef.current) {
         URL.revokeObjectURL(url)
       }
       objectUrlsRef.current = []
     }
-  // Re-run when container contents change or me loads
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerRef, me?.$isLoaded])
+  }, [containerRef, me?.$isLoaded, contentKey])
 }

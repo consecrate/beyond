@@ -79,7 +79,7 @@ function AudienceTheaterPollPrompt({ block }: { block: PollBlock }) {
   const me = useAccount(PlaydeckAccount, {
     select: (account) => (account.$isLoaded ? account : null),
   })
-  useJazzImages(containerRef, me)
+  useJazzImages(containerRef, me, block.prompt)
 
   return (
     <div
@@ -221,7 +221,7 @@ export function PollSlideCard({
   const me = useAccount(PlaydeckAccount, {
     select: (account) => (account.$isLoaded ? account : null),
   })
-  useJazzImages(promptRef, me)
+  useJazzImages(promptRef, me, block.prompt)
   const previewShares = useMemo(
     () => {
       if (variant !== "preview") return null

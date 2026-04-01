@@ -81,7 +81,7 @@ export function RevealSlideBody({
     select: (account) => (account.$isLoaded ? account : null),
   })
 
-  useJazzImages(containerRef, me)
+  useJazzImages(containerRef, me, slide.html)
 
   if (slide.poll || slide.question || slide.interactiveError) {
     return (
