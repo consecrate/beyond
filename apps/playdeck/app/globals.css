@@ -6,6 +6,7 @@
   .question-overlay-prompt :is(p, h1, h2, h3) {
     margin: 0;
     text-wrap: balance;
+    overflow-wrap: anywhere;
     color: var(--foreground);
   }
 
@@ -49,6 +50,7 @@
   .question-theater-prompt :is(p, h1, h2, h3) {
     margin: 0;
     text-wrap: balance;
+    overflow-wrap: anywhere;
     color: var(--primary-foreground);
     font-weight: 800;
     line-height: 1.08;
@@ -87,6 +89,15 @@
 }
 
 /* Shared Markdown image rendering across editor preview, presenter, and audience views */
+.slide-markdown-prose {
+  max-height: min(70vh, 700px);
+  overflow: auto;
+}
+
+.slide-markdown-prose :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, figcaption) {
+  overflow-wrap: anywhere;
+}
+
 .slide-markdown-image,
 .prose :where(.slide-markdown-image) {
   display: block;
@@ -100,6 +111,10 @@
 }
 
 @media (max-width: 640px) {
+  .slide-markdown-prose {
+    max-height: min(56vh, 20rem);
+  }
+
   .slide-markdown-image,
   .prose :where(.slide-markdown-image) {
     max-height: min(44vh, 16rem);

@@ -1,3 +1,4 @@
+import { parseImportedSlideBody } from "@/features/decks/parse-slide-import"
 import type { DeckSlideView } from "@/features/decks/deck-types"
 import {
   computePollKey,
@@ -103,6 +104,29 @@ export function deckSlidesToRevealModels(
   slides: ParsedSlide[],
 ): RevealSlideModel[] {
   return slides.map((s) => {
+    const imported = parseImportedSlideBody(s.body)
+    if (imported.kind === "invalid-import") {
+      return {
+        title: s.title,
+        html: "",
+        importedImage: null,
+        poll: null,
+        question: null,
+        interactiveError: imported.block,
+      }
+    }
+
+    if (imported.kind === "imported-image") {
+      return {
+        title: s.title,
+        html: "",
+        importedImage: imported.block,
+        poll: null,
+        question: null,
+        interactiveError: null,
+      }
+    }
+
     const question = parseQuestionSlideBody({
       slideTitle: s.title,
       body: s.body,
@@ -112,6 +136,7 @@ export function deckSlidesToRevealModels(
       return {
         title: s.title,
         html: "",
+        importedImage: null,
         poll: null,
         question: null,
         interactiveError: question.block,
@@ -122,6 +147,7 @@ export function deckSlidesToRevealModels(
       return {
         title: s.title,
         html: "",
+        importedImage: null,
         poll: null,
         question: question.block,
         interactiveError: null,
@@ -133,6 +159,7 @@ export function deckSlidesToRevealModels(
       return {
         title: s.title,
         html: slideMarkdownToSafeHtml(s.body),
+        importedImage: null,
         poll: null,
         question: null,
         interactiveError: null,
@@ -154,6 +181,7 @@ export function deckSlidesToRevealModels(
     return {
       title: s.title,
       html: "",
+      importedImage: null,
       poll,
       question: null,
       interactiveError: null,

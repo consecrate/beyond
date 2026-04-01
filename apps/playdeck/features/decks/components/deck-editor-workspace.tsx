@@ -14,6 +14,17 @@ import {
 
 import { PlaydeckAccount } from "@/features/jazz/schema"
 import { replaceSlidesFromMarkdown } from "@/features/decks/jazz-deck-mutations"
+import {
+  createLocalImportedSlideRecord,
+  ensureImportedSlideUploaded,
+  getImportedSlideRecord,
+  subscribeToImportedSlideChanges,
+} from "@/features/decks/local-imported-slide-store"
+import {
+  buildImportedSlideDirective,
+  extractLocalImportedSlideIds,
+  replaceImportedSlideSource,
+} from "@/features/decks/parse-slide-import"
 import type { DeckSlideView } from "@/features/decks/deck-types"
 import { uploadImageToSupabase } from "@/features/decks/supabase-image-upload"
 import { appendPollSlideMarkdown } from "@/features/decks/parse-slide-poll"
@@ -64,6 +75,7 @@ export function DeckEditorWorkspace({
     initialMarkdown(slides),
   )
   const [error, setError] = useState<string | undefined>()
+  const [pendingImportedUploads, setPendingImportedUploads] = useState(0)
   const [pending, startSaveTransition] = useTransition()
 
   const markdownRef = useRef(markdown)
@@ -191,6 +203,7 @@ export function DeckEditorWorkspace({
       JSON.stringify(
         revealModels.map((s) => [
           s.html,
+          s.importedImage?.src ?? null,
           s.poll?.pollKey ?? null,
           s.question?.questionKey ?? null,
           s.interactiveError?.message ?? null,
@@ -201,9 +214,81 @@ export function DeckEditorWorkspace({
 
   const isDirty = markdown !== lastSavedMarkdown
   const hasPendingUploads = useMemo(
-    () => hasPendingImageUpload(markdown),
-    [markdown],
+    () => hasPendingImageUpload(markdown) || pendingImportedUploads > 0,
+    [markdown, pendingImportedUploads],
   )
+
+  useEffect(() => {
+    let active = true
+
+    const syncImportedUploads = async () => {
+      const importIds = extractLocalImportedSlideIds(markdownRef.current)
+      if (importIds.length === 0) {
+        if (active) {
+          setPendingImportedUploads(0)
+        }
+        return
+      }
+
+      const records = await Promise.all(
+        importIds.map((id) => getImportedSlideRecord(id)),
+      )
+      if (!active) return
+
+      const unresolved = records.filter(
+        (record) => !record || record.remoteUrl == null,
+      ).length
+      setPendingImportedUploads(unresolved)
+    }
+
+    void syncImportedUploads()
+
+    const unsubscribe = subscribeToImportedSlideChanges((importId) => {
+      if (!extractLocalImportedSlideIds(markdownRef.current).includes(importId)) {
+        return
+      }
+
+      void syncImportedUploads()
+      void ensureImportedSlideUploaded(importId).then((result) => {
+        if (!result.remoteUrl) return
+        setMarkdown((current) =>
+          replaceImportedSlideSource(
+            current,
+            `local://${importId}`,
+            result.remoteUrl!,
+          ),
+        )
+      })
+    })
+
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [markdown])
+
+  useEffect(() => {
+    const importIds = extractLocalImportedSlideIds(markdown)
+    if (importIds.length === 0) return
+
+    const syncRemoteSources = () => {
+      for (const importId of importIds) {
+        void ensureImportedSlideUploaded(importId).then((result) => {
+          if (!result.remoteUrl) return
+          setMarkdown((current) =>
+            replaceImportedSlideSource(
+              current,
+              `local://${importId}`,
+              result.remoteUrl!,
+            ),
+          )
+        })
+      }
+    }
+    syncRemoteSources()
+    const timer = window.setInterval(syncRemoteSources, 15000)
+    return () => window.clearInterval(timer)
+  }, [markdown])
 
   useEffect(() => {
     onEditorStateChange?.({
@@ -222,8 +307,16 @@ export function DeckEditorWorkspace({
   }
 
   const handleImageUpload: ImageUploadFn = useCallback(
-    async (blob) => {
+    async (blob, options) => {
       try {
+        if (options?.mode === "imported-slide") {
+          const localRecord = await createLocalImportedSlideRecord(blob)
+          setPendingImportedUploads((count) => count + 1)
+          return {
+            markdown: buildImportedSlideDirective(localRecord.src),
+          }
+        }
+
         const result = await uploadImageToSupabase(blob)
         if ("error" in result) {
           setError(result.error)
@@ -243,7 +336,7 @@ export function DeckEditorWorkspace({
   const statusMessage = error
     ? null
     : hasPendingUploads
-      ? "Uploading image…"
+      ? "Syncing slide media…"
     : pending
       ? "Syncing…"
       : isDirty

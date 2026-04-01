@@ -1,8 +1,13 @@
 import { EditorSelection, Prec, type Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
+import {
+  isImportSlideAtPosition,
+  replaceSlideBodyAtPosition,
+} from "@/features/decks/slide-markdown-editor-utils"
 
 export type ImageUploadFn = (
   blob: Blob,
+  options?: { mode?: "inline" | "imported-slide" },
 ) => Promise<{ markdown: string } | { error: string }>
 type DocChangeFn = (doc: string) => void
 
@@ -59,6 +64,26 @@ export function imagePasteExtension(
 
         event.preventDefault()
 
+        const { from } = view.state.selection.main
+        if (isImportSlideAtPosition(view.state.doc.toString(), from)) {
+          const blob = imageItems[0]?.getAsFile()
+          if (!blob) return true
+
+          onUpload(blob, { mode: "imported-slide" }).then((result) => {
+            if ("error" in result) return
+            const currentDoc = view.state.doc.toString()
+            const change = replaceSlideBodyAtPosition(
+              currentDoc,
+              from,
+              result.markdown,
+            )
+            view.dispatch({ changes: change })
+            onDocChange?.(view.state.doc.toString())
+          })
+
+          return true
+        }
+
         for (const item of imageItems) {
           const blob = item.getAsFile()
           if (!blob) continue
@@ -67,14 +92,13 @@ export function imagePasteExtension(
           const placeholder = `![${token}]()`
 
           // Insert placeholder at current cursor
-          const { from } = view.state.selection.main
           view.dispatch({
             changes: { from, insert: placeholder },
             selection: EditorSelection.cursor(from + placeholder.length),
           })
           onDocChange?.(view.state.doc.toString())
 
-          onUpload(blob).then((result) => {
+          onUpload(blob, { mode: "inline" }).then((result) => {
             // Find the placeholder token position in current doc
             const current = view.state.doc.toString()
             const placeholderText = `![${token}]()`

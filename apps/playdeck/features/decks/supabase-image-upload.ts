@@ -4,9 +4,29 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 
 const DEFAULT_BUCKET = "playdeck-images"
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
-const TARGET_IMAGE_BYTES = 2 * 1024 * 1024
 const MAX_IMAGE_EDGE = 1920
-const WEBP_QUALITY_STEPS = [0.86, 0.78, 0.7, 0.62]
+
+type UploadProfile = "inline" | "imported-slide"
+
+const PROFILE_SETTINGS: Record<
+  UploadProfile,
+  {
+    targetBytes: number
+    qualitySteps: number[]
+    maxEdge: number
+  }
+> = {
+  inline: {
+    targetBytes: 2 * 1024 * 1024,
+    qualitySteps: [0.86, 0.78, 0.7, 0.62],
+    maxEdge: 1920,
+  },
+  "imported-slide": {
+    targetBytes: 3 * 1024 * 1024,
+    qualitySteps: [0.92, 0.88, 0.82, 0.76],
+    maxEdge: 2048,
+  },
+}
 
 const MIME_TO_EXTENSION: Record<string, string> = {
   "image/gif": "gif",
@@ -26,8 +46,8 @@ function extensionForBlob(blob: Blob): string | null {
   return MIME_TO_EXTENSION[blob.type] ?? null
 }
 
-function targetDimensions(width: number, height: number) {
-  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(width, height))
+function targetDimensions(width: number, height: number, maxEdge: number) {
+  const scale = Math.min(1, maxEdge / Math.max(width, height))
   return {
     width: Math.max(1, Math.round(width * scale)),
     height: Math.max(1, Math.round(height * scale)),
@@ -82,7 +102,10 @@ async function loadRasterSource(blob: Blob): Promise<RasterSource | null> {
   }
 }
 
-async function optimizeImageForSlide(blob: Blob): Promise<Blob> {
+async function optimizeImageForSlide(
+  blob: Blob,
+  profile: UploadProfile,
+): Promise<Blob> {
   if (blob.type === "image/gif") return blob
   if (typeof document === "undefined") return blob
 
@@ -90,11 +113,13 @@ async function optimizeImageForSlide(blob: Blob): Promise<Blob> {
   if (!raster) return blob
 
   try {
+    const settings = PROFILE_SETTINGS[profile]
     const { width, height, resized } = targetDimensions(
       raster.width,
       raster.height,
+      settings.maxEdge,
     )
-    const shouldOptimize = resized || blob.size > TARGET_IMAGE_BYTES
+    const shouldOptimize = resized || blob.size > settings.targetBytes
     if (!shouldOptimize) return blob
 
     const canvas = document.createElement("canvas")
@@ -108,9 +133,9 @@ async function optimizeImageForSlide(blob: Blob): Promise<Blob> {
     context.drawImage(raster.source, 0, 0, width, height)
 
     let smallestCandidate: Blob | null = null
-    const targetBytes = Math.min(blob.size, TARGET_IMAGE_BYTES)
+    const targetBytes = Math.min(blob.size, settings.targetBytes)
 
-    for (const quality of WEBP_QUALITY_STEPS) {
+    for (const quality of settings.qualitySteps) {
       const candidate = await canvasToBlob(canvas, "image/webp", quality)
       if (!candidate) continue
 
@@ -133,9 +158,11 @@ async function optimizeImageForSlide(blob: Blob): Promise<Blob> {
 
 export async function uploadImageToSupabase(
   blob: Blob,
+  options?: { profile?: UploadProfile },
 ): Promise<{ url: string } | { error: string }> {
   try {
-    const optimizedBlob = await optimizeImageForSlide(blob)
+    const profile = options?.profile ?? "inline"
+    const optimizedBlob = await optimizeImageForSlide(blob, profile)
     const ext = extensionForBlob(optimizedBlob)
     if (!ext) {
       return { error: "Only PNG, JPG, WEBP, and GIF images are supported." }

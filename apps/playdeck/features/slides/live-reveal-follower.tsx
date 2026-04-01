@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 
 import type { Loaded } from "jazz-tools"
 import { assertLoaded } from "jazz-tools"
@@ -41,6 +41,7 @@ import { BattleRoyaleAudience } from "@/features/slides/battle-royale-audience"
 import { InventoryOverlayWindow } from "@/features/slides/inventory-overlay-window"
 import { ShopOverlayWindow, PowerupStoreCatalog } from "@/features/slides/shop-overlay-window"
 import { formatPowerupLabel } from "@/features/slides/powerup-meta"
+import { useRevealAutoLayout } from "@/features/slides/use-reveal-auto-layout"
 
 import "reveal.js/reveal.css"
 import "reveal.js/theme/black.css"
@@ -204,6 +205,17 @@ export function LiveRevealFollower({
   useEffect(() => {
     activeSlideIndexRef.current = activeSlideIndex
   }, [activeSlideIndex])
+
+  const requestRevealLayout = useCallback(() => {
+    deckApiRef.current?.layout()
+  }, [])
+
+  useRevealAutoLayout({
+    enabled: numSlides > 0,
+    contentRef: revealRef,
+    viewportRef,
+    onLayout: requestRevealLayout,
+  })
 
   useEffect(() => {
     if (!revealRef.current || numSlides < 1) {
@@ -384,10 +396,7 @@ export function LiveRevealFollower({
           <p className="p-6 text-center text-sm text-destructive">{loadError}</p>
         ) : (
           <>
-            <div
-              key={sessionId}
-              className="absolute inset-0 z-0 flex flex-col"
-            >
+            <div key={sessionId} className="absolute inset-0 z-0 flex flex-col">
               <div
                 ref={viewportRef}
                 className="reveal-viewport h-full min-h-0 w-full flex-1"

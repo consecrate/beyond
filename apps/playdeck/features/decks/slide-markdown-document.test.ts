@@ -272,4 +272,21 @@ describe("presenterRevealSlidesFromSources", () => {
 
     expect(fromLive[0].html).toContain('data-jazz-id="co_zimg123"')
   })
+
+  it("maps #import slides to imported image models", () => {
+    const liveMd = `# Canvas\n\n#import https://cdn.example.com/slide-1.webp\n`
+    const deckViews = viewsFromParsed(parseMarkdownDocumentToSlides(liveMd))
+    const fromLive = presenterRevealSlidesFromSources({
+      liveMarkdown: liveMd,
+      deckViews,
+    })
+
+    expect(fromLive[0].importedImage).toEqual({
+      type: "imported-image",
+      src: "https://cdn.example.com/slide-1.webp",
+    })
+    expect(fromLive[0].html).toBe("")
+    expect(fromLive[0].poll).toBeNull()
+    expect(fromLive[0].question).toBeNull()
+  })
 })

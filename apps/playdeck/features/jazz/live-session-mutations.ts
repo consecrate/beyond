@@ -2,6 +2,7 @@ import type { Loaded } from "jazz-tools"
 import { Account, assertLoaded, co, Group, z } from "jazz-tools"
 
 import { deckSlidesToViews } from "@/features/decks/deck-map"
+import { replaceImportedSlideSource } from "@/features/decks/parse-slide-import"
 import {
   parseMarkdownDocumentToSlides,
   slidesToMarkdownDocument,
@@ -72,6 +73,23 @@ export function updateLiveSlideIndex(
   if (n < 1) return
   const idx = Math.min(Math.max(0, index), n - 1)
   liveSession.$jazz.applyDiff({ activeSlideIndex: idx })
+}
+
+export function replaceImportedLiveSlideSource(
+  liveSession: Loaded<typeof LiveSession>,
+  fromSrc: string,
+  toSrc: string,
+): boolean {
+  const nextMarkdown = replaceImportedSlideSource(
+    liveSession.markdown,
+    fromSrc,
+    toSrc,
+  )
+  if (nextMarkdown === liveSession.markdown) {
+    return false
+  }
+  liveSession.$jazz.applyDiff({ markdown: nextMarkdown })
+  return true
 }
 
 export function endLiveSession(liveSession: Loaded<typeof LiveSession>): void {
@@ -1157,8 +1175,9 @@ export function purchasePowerup(
   assertLoaded(me)
   assertLoaded(liveSession)
 
-  if (liveSession.game_phase !== "store") {
-    return { ok: false, error: "Purchases are only available during the store phase." }
+  const purchasablePhases = ["store", "playing", "battle_royale"] as const
+  if (!purchasablePhases.includes(liveSession.game_phase as typeof purchasablePhases[number])) {
+    return { ok: false, error: "Purchases are not available right now." }
   }
 
   const players = liveSession.joined_players
@@ -1367,17 +1386,33 @@ function findMemberSelectionIndex(
   return -1
 }
 
-function isPowerupTypeTakenByOtherTeam(
+/**
+ * HP-boosting powerup types that multiple teammates are allowed to each pick once per round.
+ * All other types are restricted to one picker per team per round.
+ */
+const STACKABLE_POWERUP_TYPES = new Set<z.infer<typeof PowerupType>>([
+  "healing_potion",
+  "step_up",
+])
+
+/**
+ * Returns true if another member of the same team has already claimed this powerup type
+ * this round, AND the type is not stackable. Used to enforce the one-type-per-teammate rule.
+ */
+function isPowerupTypeTakenByTeammate(
   battleState: Loaded<typeof BattleState>,
   powerupType: z.infer<typeof PowerupType>,
-  exceptTeamId: string,
+  teamId: string,
+  excludePickerId: string,
 ): boolean {
+  if (STACKABLE_POWERUP_TYPES.has(powerupType)) return false
   const list = battleState.powerup_selections
   if (!list || !list.$isLoaded) return false
   assertLoaded(list)
   for (const s of list) {
     if (!s || !s.$isLoaded) continue
-    if (s.team_id === exceptTeamId) continue
+    if (s.team_id !== teamId) continue
+    if (s.picker_account_id === excludePickerId) continue
     if (s.powerup_type === powerupType) return true
   }
   return false
@@ -1484,12 +1519,12 @@ export function claimBattlePowerup(
   const existing = idx >= 0 ? list[idx] : null
 
   if (!existing || !existing.$isLoaded) {
-    if (isPowerupTypeTakenByOtherTeam(battleState, powerupType, myTeamId)) {
-      return { ok: false, error: "Another team is already using this power-up type this round." }
+    if (isPowerupTypeTakenByTeammate(battleState, powerupType, myTeamId, pickerId)) {
+      return { ok: false, error: "A teammate has already chosen this power-up type this round." }
     }
   } else if (existing.powerup_type !== powerupType) {
-    if (isPowerupTypeTakenByOtherTeam(battleState, powerupType, myTeamId)) {
-      return { ok: false, error: "Another team is already using this power-up type this round." }
+    if (isPowerupTypeTakenByTeammate(battleState, powerupType, myTeamId, pickerId)) {
+      return { ok: false, error: "A teammate has already chosen this power-up type this round." }
     }
   }
 
@@ -1618,5 +1653,4 @@ export function selectBattleTarget(
 
   return { ok: true }
 }
-
 

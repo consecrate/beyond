@@ -15,11 +15,16 @@ import {
   slidesToMarkdownDocument,
 } from "@/features/decks/slide-markdown-document"
 import {
+  ensureImportedSlideUploaded,
+} from "@/features/decks/local-imported-slide-store"
+import { extractLocalImportedSlideIds } from "@/features/decks/parse-slide-import"
+import {
   closePoll,
   endLiveSession,
   startQuestion,
   startLiveSession,
   stopQuestion,
+  replaceImportedLiveSlideSource,
   updateLiveSlideIndex,
   setLobbyVisible,
   kickPlayer,
@@ -111,6 +116,11 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     joinCodeRef.current = joinCode
   }, [joinCode])
 
+  const liveMarkdownKey =
+    liveSessionSub.$isLoaded
+      ? liveSessionSub.markdown
+      : liveSessionRef.current?.markdown ?? null
+
   const tearDownLiveSession = useCallback((opts: { keepalive: boolean }) => {
     const session = liveSessionRef.current
     const code = joinCodeRef.current
@@ -139,6 +149,18 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
       if (!deck) return
 
       const markdown = slidesToMarkdownDocument(deckSlidesToViews(deck))
+      const pendingImportedIds = extractLocalImportedSlideIds(markdown)
+      if (pendingImportedIds.length > 0) {
+        const proceed = window.confirm(
+          `This deck still has ${pendingImportedIds.length} imported slide(s) that only exist locally on this device. Presenter view can continue, but audience devices may see a waiting state until upload finishes.\n\nStart live anyway?`,
+        )
+        if (!proceed) return
+
+        for (const importId of pendingImportedIds) {
+          void ensureImportedSlideUploaded(importId)
+        }
+      }
+
       const unreadableImages = await findUnreadableDeckImages(me, markdown)
       if (unreadableImages.length > 0) {
         window.alert(
@@ -182,6 +204,32 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     },
     [deckId, me],
   )
+
+  useEffect(() => {
+    const session = liveSessionSub.$isLoaded
+      ? liveSessionSub
+      : liveSessionRef.current
+    if (!session) return
+
+    const importIds = extractLocalImportedSlideIds(session.markdown)
+    if (importIds.length === 0) return
+
+    const syncLocalImports = () => {
+      for (const importId of importIds) {
+        void ensureImportedSlideUploaded(importId).then((result) => {
+          if (!result.remoteUrl) return
+          replaceImportedLiveSlideSource(
+            session,
+            `local://${importId}`,
+            result.remoteUrl,
+          )
+        })
+      }
+    }
+    syncLocalImports()
+    const timer = window.setInterval(syncLocalImports, 15000)
+    return () => window.clearInterval(timer)
+  }, [liveMarkdownKey, liveSessionSub])
 
   const handleSlideIndexSync = useCallback((index: number) => {
     const session = liveSessionRef.current

@@ -31,7 +31,7 @@ export function InteractiveErrorCard({
         )}
       >
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-destructive">
-          Question Error
+          Slide Error
         </p>
         {title ? (
           <p className="mt-3 text-sm font-medium text-foreground">{title}</p>

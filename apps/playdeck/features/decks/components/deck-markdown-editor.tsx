@@ -16,6 +16,10 @@ import {
 } from "@/features/decks/codemirror-image-paste"
 import { imageDropExtension } from "@/features/decks/codemirror-image-drop"
 import { imageCommandExtension } from "@/features/decks/codemirror-image-command"
+import {
+  isImportSlideAtPosition,
+  replaceSlideBodyAtPosition,
+} from "@/features/decks/slide-markdown-editor-utils"
 
 type Props = {
   value: string
@@ -55,7 +59,7 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
   )
 
   const stableOnImageUpload = useCallback<ImageUploadFn>(
-    (blob) => onImageUploadRef.current(blob),
+    (blob, options) => onImageUploadRef.current(blob, options),
     [],
   )
 
@@ -84,19 +88,50 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
       // Access the CM EditorView attached to the CodeMirror DOM node
       const editorDom = document.querySelector(".cm-editor") as (HTMLElement & { cmView?: EditorView }) | null
       const view = (editorDom as unknown as { CodeMirror?: { view?: EditorView } })?.CodeMirror?.view
+      const currentDoc = valueRef.current
+      const isImportSlide = isImportSlideAtPosition(currentDoc, insertAt)
 
       if (!view) {
-        // Fallback: just call onImageUpload and insert into the document state
-        // Read from ref at resolution time to get latest value
-        onImageUploadRef.current(file).then((result) => {
+        onImageUploadRef.current(file, {
+          mode: isImportSlide ? "imported-slide" : "inline",
+        }).then((result) => {
           if ("markdown" in result) {
-            const currentValue = valueRef.current
+            const latestValue = valueRef.current
+            if (isImportSlide) {
+              const change = replaceSlideBodyAtPosition(
+                latestValue,
+                insertAt,
+                result.markdown,
+              )
+              onChangeRef.current(
+                latestValue.slice(0, change.from) +
+                  change.insert +
+                  latestValue.slice(change.to),
+              )
+              return
+            }
+
             onChangeRef.current(
-              currentValue.slice(0, insertAt) +
+              latestValue.slice(0, insertAt) +
                 `${result.markdown}\n` +
-                currentValue.slice(insertAt),
+                latestValue.slice(insertAt),
             )
           }
+        })
+        return
+      }
+
+      if (isImportSlide) {
+        void onImageUploadRef.current(file, { mode: "imported-slide" }).then((result) => {
+          if ("error" in result) return
+          const updatedDoc = view.state.doc.toString()
+          const change = replaceSlideBodyAtPosition(
+            updatedDoc,
+            insertAt,
+            result.markdown,
+          )
+          view.dispatch({ changes: change })
+          syncParentFromView(view.state.doc.toString())
         })
         return
       }
@@ -109,7 +144,7 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
       })
       syncParentFromView(view.state.doc.toString())
 
-      onImageUploadRef.current(file).then((result) => {
+      onImageUploadRef.current(file, { mode: "inline" }).then((result) => {
         // Find the placeholder token position in current doc
         const current = view.state.doc.toString()
         const placeholderText = `![${token}]()`

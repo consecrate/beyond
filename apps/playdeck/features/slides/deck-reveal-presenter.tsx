@@ -17,8 +17,13 @@ import {
 import type { LiveSession, SessionPlayer } from "@/features/jazz/schema"
 import { PlaydeckAccount } from "@/features/jazz/schema"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
+import {
+  ImportedSlideFrame,
+  useImportedSlidePrefetch,
+} from "@/features/slides/imported-slide-frame"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { useRevealAutoLayout } from "@/features/slides/use-reveal-auto-layout"
 import { useJazzImages } from "@/features/slides/use-jazz-images"
 import { BattleLog } from "@/features/slides/battle-log"
 import { BattlePodium } from "@/features/slides/battle-podium"
@@ -178,6 +183,17 @@ export function RevealSlideBody({
     )
   }
 
+  if (slide.importedImage) {
+    return (
+      <ImportedSlideFrame
+        source={slide.importedImage.src}
+        title={slide.title}
+        priority={slideIndex === activeIndex}
+        className="h-full w-full max-w-full"
+      />
+    )
+  }
+
   const inner =
     slide.html.trim() === ""
       ? '<p class="text-muted-foreground">Empty slide</p>'
@@ -186,7 +202,7 @@ export function RevealSlideBody({
   return (
     <div
       ref={containerRef}
-      className="prose prose-invert max-h-[min(70vh,700px)] w-full max-w-4xl overflow-auto px-2 text-left prose-headings:font-semibold prose-p:leading-relaxed"
+      className="slide-markdown-prose prose prose-invert w-full max-w-4xl px-2 text-left prose-headings:font-semibold prose-p:leading-relaxed"
       dangerouslySetInnerHTML={{ __html: inner }}
     />
   )
@@ -222,6 +238,30 @@ function GridSlideThumbnail({
               message={slide.interactiveError.message}
             />
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (slide.importedImage) {
+    return (
+      <div
+        className="@container relative w-full overflow-hidden rounded-md border border-border bg-[#0d1117]"
+        style={{ aspectRatio: `${REVEAL_WIDTH} / ${REVEAL_HEIGHT}` }}
+      >
+        <div
+          className="absolute left-0 top-0 origin-top-left"
+          style={{
+            width: REVEAL_WIDTH,
+            height: REVEAL_HEIGHT,
+            transform: `scale(calc(100cqw / ${REVEAL_WIDTH}px))`,
+          }}
+        >
+          <ImportedSlideFrame
+            source={slide.importedImage.src}
+            title={slide.title}
+            className="h-full w-full rounded-none"
+          />
         </div>
       </div>
     )
@@ -351,7 +391,9 @@ export function DeckRevealPresenter({
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const revealRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const deckApiRef = useRef<RevealApi | null>(null)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const initialIndexRef = useRef(initialSlideIndex)
   const onSlideChangedHandlerRef = useRef<() => void>(() => { })
   const liveSlideSyncRef = useRef<((index: number) => void) | undefined>(
@@ -398,6 +440,19 @@ export function DeckRevealPresenter({
     onSlideChangedHandlerRef.current = onSlideChanged
   }, [onSlideChanged])
 
+  const requestRevealLayout = useCallback(() => {
+    deckApiRef.current?.layout()
+  }, [])
+
+  useRevealAutoLayout({
+    enabled: numSlides > 0 && view === "slide",
+    contentRef: revealRef,
+    viewportRef,
+    onLayout: requestRevealLayout,
+  })
+
+  useImportedSlidePrefetch(slides, activeIndex, view === "slide")
+
   useEffect(() => {
     if (!revealRef.current || numSlides < 1) return
 
@@ -429,6 +484,16 @@ export function DeckRevealPresenter({
         deck.slide(start, 0)
         deckApiRef.current = deck
         setActiveIndex(deck.getIndices().h)
+        deck.layout()
+        const viewportEl = viewportRef.current
+        if (viewportEl && typeof ResizeObserver !== "undefined") {
+          resizeObserverRef.current?.disconnect()
+          const ro = new ResizeObserver(() => {
+            deckApiRef.current?.layout()
+          })
+          ro.observe(viewportEl)
+          resizeObserverRef.current = ro
+        }
         el.addEventListener("slidechanged", wrapped)
       })
       .catch(() => {
@@ -437,6 +502,8 @@ export function DeckRevealPresenter({
 
     return () => {
       cancelled = true
+      resizeObserverRef.current?.disconnect()
+      resizeObserverRef.current = null
       el.removeEventListener("slidechanged", wrapped)
       deck.destroy()
       deckApiRef.current = null
@@ -611,7 +678,10 @@ export function DeckRevealPresenter({
               )}
               aria-hidden={view !== "slide"}
             >
-              <div className="reveal-viewport h-full min-h-0 w-full flex-1">
+              <div
+                ref={viewportRef}
+                className="reveal-viewport h-full min-h-0 w-full flex-1"
+              >
                 <div ref={revealRef} className="reveal h-full min-h-[50vh]">
                   <div className="slides">
                     {slides.map((slide, i) => (

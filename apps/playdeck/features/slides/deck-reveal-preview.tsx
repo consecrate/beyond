@@ -12,8 +12,13 @@ import { useAccount } from "jazz-tools/react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
+import {
+  ImportedSlideFrame,
+  useImportedSlidePrefetch,
+} from "@/features/slides/imported-slide-frame"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { useRevealAutoLayout } from "@/features/slides/use-reveal-auto-layout"
 import { useJazzImages } from "@/features/slides/use-jazz-images"
 import { PlaydeckAccount } from "@/features/jazz/schema"
 import { Button, cn } from "@beyond/design-system"
@@ -67,6 +72,17 @@ const SlideBody = memo(function SlideBody({
     )
   }
 
+  if (slide.importedImage) {
+    return (
+      <ImportedSlideFrame
+        source={slide.importedImage.src}
+        title={slide.title}
+        priority={slideIndex === activeIndex}
+        className="h-full w-full max-w-full"
+      />
+    )
+  }
+
   const inner =
     slide.html.trim() === ""
       ? '<p class="text-muted-foreground">Empty slide</p>'
@@ -75,7 +91,7 @@ const SlideBody = memo(function SlideBody({
   return (
     <div
       ref={containerRef}
-      className="prose prose-invert max-h-[min(70vh,700px)] w-full max-w-4xl overflow-auto px-2 text-left prose-headings:font-semibold prose-p:leading-relaxed"
+      className="slide-markdown-prose prose prose-invert w-full max-w-4xl px-2 text-left prose-headings:font-semibold prose-p:leading-relaxed"
       dangerouslySetInnerHTML={{ __html: inner }}
     />
   )
@@ -91,7 +107,9 @@ export function DeckRevealPreview({
   const [revealReady, setRevealReady] = useState(false)
 
   const revealRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const deckApiRef = useRef<RevealApi | null>(null)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const onSlideChangedHandlerRef = useRef<() => void>(() => {})
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -107,6 +125,22 @@ export function DeckRevealPreview({
   useEffect(() => {
     onSlideChangedHandlerRef.current = onSlideChanged
   }, [onSlideChanged])
+
+  const requestRevealLayout = useCallback(() => {
+    const deck = deckApiRef.current
+    if (!deck) return
+    deck.sync()
+    deck.layout()
+  }, [])
+
+  useRevealAutoLayout({
+    enabled: revealReady && numSlides > 0,
+    contentRef: revealRef,
+    viewportRef,
+    onLayout: requestRevealLayout,
+  })
+
+  useImportedSlidePrefetch(slides, activeIndex, revealReady)
 
   useEffect(() => {
     if (!revealRef.current || numSlides < 1) return
@@ -136,6 +170,16 @@ export function DeckRevealPreview({
         deckApiRef.current = deck
         setActiveIndex(deck.getIndices().h)
         setRevealReady(true)
+        deck.layout()
+        const viewportEl = viewportRef.current
+        if (viewportEl && typeof ResizeObserver !== "undefined") {
+          resizeObserverRef.current?.disconnect()
+          const ro = new ResizeObserver(() => {
+            deckApiRef.current?.layout()
+          })
+          ro.observe(viewportEl)
+          resizeObserverRef.current = ro
+        }
         el.addEventListener("slidechanged", wrapped)
       })
       .catch(() => {
@@ -145,6 +189,8 @@ export function DeckRevealPreview({
     return () => {
       cancelled = true
       setRevealReady(false)
+      resizeObserverRef.current?.disconnect()
+      resizeObserverRef.current = null
       el.removeEventListener("slidechanged", wrapped)
       deck.destroy()
       deckApiRef.current = null
@@ -237,7 +283,7 @@ export function DeckRevealPreview({
           <p className="p-6 text-center text-sm text-destructive">{loadError}</p>
         ) : (
           <>
-            <div className="reveal-viewport h-full min-h-0 w-full">
+            <div ref={viewportRef} className="reveal-viewport h-full min-h-0 w-full">
               <div ref={revealRef} className="reveal h-full min-h-[50vh]">
                 <div className="slides">
                   {slides.map((slide, i) => (

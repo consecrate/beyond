@@ -10,6 +10,7 @@ import {
   countQuestionAnswers,
   hasAnotherOpenQuestion,
   questionStatus,
+  replaceImportedLiveSlideSource,
   startLiveSession,
   startQuestion,
   stopQuestion,
@@ -223,5 +224,48 @@ describe("question live-session mutations", () => {
       ok: false,
       error: "Presenters cannot answer their own questions.",
     })
+  })
+
+  it("replaces imported local slide sources in live markdown", async () => {
+    const presenter = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "Presenter" },
+    })
+    assertLoaded(presenter)
+    assertLoaded(presenter.root)
+    const created = createDeckFromTitle(presenter, "Imported deck")
+    expect(created.ok).toBe(true)
+
+    const decks = presenter.root.decks
+    assertLoaded(decks)
+    const deck = decks[0]
+    assertLoaded(deck)
+
+    const deckId = coValueId(deck)
+    expect(
+      replaceSlidesFromMarkdown(
+        presenter,
+        deckId,
+        `# Canvas
+
+#import local://slide-a
+`,
+      ).ok,
+    ).toBe(true)
+
+    const liveStart = startLiveSession(presenter, deck, 0)
+    expect(liveStart.ok).toBe(true)
+    if (!liveStart.ok) throw new Error("Live session failed to start")
+
+    expect(
+      replaceImportedLiveSlideSource(
+        liveStart.liveSession,
+        "local://slide-a",
+        "https://cdn.example.com/slide-a.webp",
+      ),
+    ).toBe(true)
+    expect(liveStart.liveSession.markdown).toContain(
+      "#import https://cdn.example.com/slide-a.webp",
+    )
   })
 })
