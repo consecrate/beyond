@@ -76,7 +76,7 @@ export function useJazzImages(
           if (cancelled) break
 
           if (!result) {
-            // No resolution available yet — placeholder stays, no failure
+            img.classList.add("jazz-image--failed")
             continue
           }
 
