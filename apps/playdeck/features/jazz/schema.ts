@@ -29,12 +29,32 @@ export const QuestionState = co.map({
   status: z.union([z.literal("idle"), z.literal("open"), z.literal("revealed")]),
 })
 
+export const PowerupType = z.union([
+  z.literal("1/4"),
+  z.literal("double_damage"),
+  z.literal("shield"),
+  z.literal("deflect"),
+  z.literal("medkit"),
+  z.literal("critical_hit"),
+  z.literal("espionage"),
+  z.literal("healing_potion")
+])
+
+export const Powerup = co.map({
+  type: PowerupType,
+  owner_account_id: z.string(), // Specifically assigned to a member via random distribution
+  is_used: z.boolean(),
+})
+
 export const Team = co.map({
   id: z.string(),
   name: z.string(),
   color: z.string(),
   leader_account_id: z.string().optional(),
   hp: z.number().optional(),
+  status: z.union([z.literal("active"), z.literal("downed")]).optional(),
+  banked_play_points: z.number().optional(), // Pool accumulated from members, used by leader at the start
+  powerups: co.list(Powerup).optional(),
 })
 
 export const SessionPlayer = co.map({
@@ -42,6 +62,12 @@ export const SessionPlayer = co.map({
   name: z.string(),
   play_points: z.number().optional(),
   team_id: z.string().optional(),
+})
+
+export const BattleState = co.map({
+  question_key: z.string().optional(),
+  phase: z.union([z.literal("target_selection"), z.literal("question_active"), z.literal("results")]).optional(),
+  targets: z.record(z.string(), z.string()).optional(), // AttackingTeamId -> TargetTeamId
 })
 
 /** Public-read live deck snapshot + authoritative slide index for viewers. */
@@ -60,6 +86,8 @@ export const LiveSession = co.map({
   question_states: co.list(QuestionState).optional(),
   teams: co.list(Team).optional(),
   team_formation_state: z.union([z.literal("idle"), z.literal("setup"), z.literal("open")]).optional(),
+  game_phase: z.union([z.literal("lobby"), z.literal("store"), z.literal("playing"), z.literal("battle_royale")]).optional(),
+  battle_state: BattleState.optional(),
 })
 
 export const PlaydeckRoot = co.map({

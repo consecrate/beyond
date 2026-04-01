@@ -52,6 +52,9 @@ export type DeckLiveControls = {
   onStartTeamFormation?: (numTeams: number) => void | Promise<void>
   onAssignTeamLeader?: (teamId: string, accountId: string | undefined) => void | Promise<void>
   onOpenTeamJoining?: () => void | Promise<void>
+  onAutoAssignTeams?: () => void | Promise<void>
+  onStartGameStore?: () => void | Promise<void>
+  onStartGameplay?: () => void | Promise<void>
 }
 
 export type DeckRevealPresenterProps = {
@@ -450,12 +453,14 @@ export function DeckRevealPresenter({
                 </Button>
               ) : (
                 <>
-                  <span
-                    className="max-w-[9rem] truncate rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-xs tabular-nums sm:max-w-[10rem]"
-                    title="Share this code with viewers"
-                  >
-                    {live.joinCode ?? "—"}
-                  </span>
+                  {live.liveSession?.game_phase === "lobby" && (
+                    <span
+                      className="max-w-[9rem] truncate rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-xs tabular-nums sm:max-w-[10rem]"
+                      title="Share this code with viewers"
+                    >
+                      {live.joinCode ?? "—"}
+                    </span>
+                  )}
                   <Button
                     type="button"
                     variant={live.liveSession?.is_lobby_visible ? "default" : "secondary"}
@@ -669,11 +674,20 @@ export function DeckRevealPresenter({
 
             {live?.isActive && live.liveSession?.is_lobby_visible ? (
               <div className="absolute inset-0 z-50 flex flex-col bg-background">
-                <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto p-6 md:p-12">
-                  <div className="mb-12 text-center">
-                    <p className="mb-2 text-2xl font-medium tracking-tight text-muted-foreground sm:text-3xl">Go to <span className="text-foreground">playdeck.app</span> and enter code</p>
-                    <h1 className="text-8xl font-black tracking-tighter text-primary sm:text-[10rem]">{live.joinCode || "—"}</h1>
-                  </div>
+                <div className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-auto p-6 pt-12 md:p-12 md:pt-20">
+                  {(() => {
+                    const gamePhase = live.liveSession?.game_phase ?? "lobby"
+                    const formationState = live.liveSession?.team_formation_state ?? "idle"
+                    
+                    if (gamePhase !== "lobby" || formationState !== "idle") return null
+
+                    return (
+                      <div className="mb-8 text-center shrink-0">
+                        <p className="mb-2 text-2xl font-medium tracking-tight text-muted-foreground sm:text-3xl">Go to <span className="text-foreground">play.joshing.us</span> and enter code</p>
+                        <h1 className="text-8xl font-black tracking-tighter text-primary sm:text-[10rem] leading-none">{live.joinCode || "—"}</h1>
+                      </div>
+                    )
+                  })()}
 
                   {(() => {
                     const players = live.liveSession.joined_players && live.liveSession.joined_players.$isLoaded
@@ -681,7 +695,82 @@ export function DeckRevealPresenter({
                       : []
 
                     const formationState = live.liveSession?.team_formation_state ?? "idle"
+                    const gamePhase = live.liveSession?.game_phase ?? "lobby"
                     
+                    if (gamePhase === "store") {
+                       const teams = live.liveSession.teams && live.liveSession.teams.$isLoaded 
+                          ? Array.from(live.liveSession.teams).filter(Boolean)
+                          : []
+                          
+                       return (
+                          <div className="w-full max-w-6xl animate-in fade-in zoom-in-95 duration-500">
+                             <div className="mb-8 flex flex-col items-center gap-4 text-center">
+                                <h2 className="text-4xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-600">Powerup Store</h2>
+                                <p className="text-xl font-medium text-muted-foreground">Team Leaders are purchasing supplies for their teams...</p>
+                             </div>
+                             
+                             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                                {teams.map(t => {
+                                   if (!t || !t.$isLoaded) return null
+                                   const teamPowerups = t.powerups && t.powerups.$isLoaded ? Array.from(t.powerups).filter(Boolean) : []
+                                   return (
+                                      <div key={t.id} className={cn("rounded-2xl border-2 p-6 flex flex-col gap-5 shadow-lg bg-card/50 backdrop-blur-sm transition-all hover:scale-[1.02]", t.color)}>
+                                          <div className="flex items-center justify-between">
+                                             <h3 className="text-2xl font-bold">{t.name}</h3>
+                                             <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1.5 rounded-full bg-red-500/20 px-3 py-1 text-sm font-bold text-red-500">
+                                                   ❤️ {t.hp ?? 20}
+                                                </div>
+                                                <div className="flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-sm font-bold text-amber-500">
+                                                   <Star className="h-4 w-4 fill-amber-500" />
+                                                   {t.banked_play_points ?? 0}
+                                                </div>
+                                             </div>
+                                          </div>
+                                          
+                                          <div className="flex-1 bg-background/60 rounded-xl p-4 min-h-[120px]">
+                                             <p className="text-xs font-semibold mb-3 opacity-70 uppercase tracking-wider text-[var(--tw-prose-body)]">Acquired Items</p>
+                                             {teamPowerups.length === 0 ? (
+                                                <p className="text-sm italic opacity-50 text-[var(--tw-prose-body)] flex items-center justify-center h-full">Waiting for leader...</p>
+                                             ) : (
+                                                <div className="flex flex-wrap gap-2">
+                                                   {teamPowerups.map((pu, i) => {
+                                                      if (!pu || !pu.$isLoaded) return null
+                                                      const puName = pu.type.replace("_", " ")
+                                                      const member = players.find(p => p && p.$isLoaded && p.account_id === pu.owner_account_id) as Loaded<typeof SessionPlayer> | undefined
+                                                      return (
+                                                         <div key={i} className="flex items-center gap-1.5 rounded-md border border-border/40 bg-background px-2.5 py-1.5 text-xs font-medium shadow-sm">
+                                                            <span className="capitalize">{puName}</span>
+                                                            <span className="opacity-50 mx-1">→</span>
+                                                            <Users className="h-3 w-3 opacity-70" />
+                                                            <span className="max-w-[80px] truncate">{member ? member.name : "Member"}</span>
+                                                         </div>
+                                                      )
+                                                   })}
+                                                </div>
+                                             )}
+                                          </div>
+                                      </div>
+                                   )
+                                })}
+                             </div>
+                             
+                             <div className="mt-16 flex justify-center">
+                                <Button 
+                                  size="lg" 
+                                  className="h-16 rounded-full px-12 text-2xl font-black uppercase tracking-wider shadow-[0_0_30px_-5px_hsl(var(--primary))] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_50px_-5px_hsl(var(--primary))] bg-primary text-primary-foreground"
+                                  onClick={() => {
+                                     live.onSetLobbyVisible?.(false)
+                                     live.onStartGameplay?.()
+                                  }}
+                                >
+                                  Begin Battle
+                                </Button>
+                             </div>
+                          </div>
+                       )
+                    }
+
                     if (formationState === "idle") {
                       return (
                         <div className="w-full max-w-4xl">
@@ -734,42 +823,108 @@ export function DeckRevealPresenter({
                        ? Array.from(live.liveSession.teams).filter(Boolean)
                        : []
                     
+                    const unassignedPlayers = players.filter((p): p is Loaded<typeof SessionPlayer> => !!p && p.$isLoaded && !p.team_id)
+                    const assignedCount = players.length - unassignedPlayers.length
+
                     return (
                         <div className="w-full max-w-5xl">
-                           <div className="mb-8 flex items-center justify-between">
-                             <div className="flex items-center gap-4">
-                               <h2 className="text-2xl font-bold">Team Builder</h2>
-                               {formationState === "setup" && (
-                                  <div className="flex gap-2">
-                                     {[2, 4, 6].map(num => (
-                                        <Button 
-                                           key={num} 
-                                           variant={teams.length === num ? "default" : "outline"}
-                                           size="sm"
-                                           onClick={() => void live.onStartTeamFormation?.(num)}
-                                         >
-                                           {num} Teams
-                                         </Button>
-                                     ))}
-                                  </div>
-                               )}
+                           <div className="mb-8 flex flex-col gap-6">
+                             <div className="flex items-center justify-between">
+                               <div className="flex items-center gap-4">
+                                 <h2 className="text-2xl font-bold">Team Builder</h2>
+                                 {formationState === "setup" && (
+                                    <div className="flex gap-2">
+                                       {[2, 4, 6].map(num => (
+                                          <Button 
+                                             key={num} 
+                                             variant={teams.length === num ? "default" : "outline"}
+                                             size="sm"
+                                             onClick={() => void live.onStartTeamFormation?.(num)}
+                                           >
+                                             {num} Teams
+                                           </Button>
+                                       ))}
+                                    </div>
+                                 )}
+                               </div>
+                               <div className="flex items-center gap-3">
+                                 {formationState === "setup" && (
+                                    <Button size="lg" variant="secondary" onClick={() => void live.onOpenTeamJoining?.()}>
+                                      Lock & Open for Joining
+                                    </Button>
+                                 )}
+                                 <div className="group relative inline-flex">
+                                   {assignedCount === 0 && (
+                                     <div className="absolute inset-0 z-10" />
+                                   )}
+                                   <Button 
+                                     size="lg" 
+                                     disabled={assignedCount === 0}
+                                     onClick={() => void live.onStartGameStore?.()}
+                                   >
+                                     Start Game
+                                   </Button>
+                                   {assignedCount === 0 && (
+                                     <div className="pointer-events-none absolute -top-12 left-1/2 -z-0 -translate-x-1/2 whitespace-nowrap rounded-lg bg-popover px-4 py-2 text-sm font-medium text-popover-foreground opacity-0 shadow-lg ring-1 ring-border transition-all duration-200 group-hover:-top-14 group-hover:opacity-100">
+                                       Waiting for players to join teams...
+                                       <div className="absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 rounded-sm bg-popover ring-1 ring-border" style={{ clipPath: 'polygon(100% 100%, 0 100%, 100% 0)' }} />
+                                     </div>
+                                   )}
+                                 </div>
+                               </div>
                              </div>
-                             {formationState === "setup" && (
-                                <Button size="lg" onClick={() => void live.onOpenTeamJoining?.()}>
-                                  Lock & Open for Joining
-                                </Button>
-                             )}
+
                              {formationState === "open" && (
-                                <span className="animate-pulse font-medium text-amber-500 bg-amber-500/10 px-4 py-2 rounded-full border border-amber-500/20">
-                                   Audience is joining teams...
-                                </span>
+                                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 shadow-inner">
+                                   <div className="mb-4 flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                         <h3 className="text-lg font-semibold text-amber-500">Unassigned Pool</h3>
+                                         <span className="relative flex h-3 w-3">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                                         </span>
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                         <span className="font-mono text-base font-bold text-amber-500">
+                                            {assignedCount}/{players.length} Assigned
+                                         </span>
+                                         {unassignedPlayers.length > 0 && (
+                                            <Button 
+                                              variant="outline" 
+                                              size="sm" 
+                                              onClick={() => void live.onAutoAssignTeams?.()}
+                                              className="border-amber-500/50 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400"
+                                            >
+                                              Balance Teams
+                                            </Button>
+                                         )}
+                                      </div>
+                                   </div>
+                                   
+                                   <div className="flex flex-wrap gap-2">
+                                      {unassignedPlayers.length === 0 ? (
+                                         <div className="w-full rounded-lg border border-dashed border-emerald-500/30 bg-emerald-500/10 py-4 text-center text-emerald-500">
+                                            <p className="font-medium flex items-center justify-center gap-2">
+                                               All players have chosen a team!
+                                            </p>
+                                         </div>
+                                      ) : (
+                                         unassignedPlayers.map(p => (
+                                            <span key={p.account_id} className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-background/80 px-3 py-1.5 text-sm font-medium text-foreground shadow-sm">
+                                               <Users className="h-4 w-4 text-muted-foreground" />
+                                               {p.name}
+                                            </span>
+                                         ))
+                                      )}
+                                   </div>
+                                </div>
                              )}
                            </div>
                            
                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                               {teams.map(t => {
                                  if (!t || !t.$isLoaded) return null
-                                 const teamPlayers = players.filter(p => p && p.$isLoaded && p.team_id === t.id)
+                                 const teamPlayers = players.filter((p): p is Loaded<typeof SessionPlayer> => !!p && p.$isLoaded && p.team_id === t.id)
                                  const leader = teamPlayers.find(p => p && p.$isLoaded && p.account_id === t.leader_account_id) as Loaded<typeof SessionPlayer> | undefined
                                  return (
                                      <div key={t.id} className={cn("rounded-xl border-2 p-5 flex flex-col gap-4 shadow-sm", t.color)}>
@@ -789,8 +944,9 @@ export function DeckRevealPresenter({
                                                  onChange={(e) => void live.onAssignTeamLeader?.(t.id, e.target.value || undefined)}
                                               >
                                                 <option value="">-- Choose a leader --</option>
-                                                {players.map(p => {
-                                                   if (!p || !p.$isLoaded) return null
+                                                {players.map(player => {
+                                                   if (!player || !player.$isLoaded) return null
+                                                   const p = player as Loaded<typeof SessionPlayer>
                                                    return (
                                                       <option key={p.account_id} value={p.account_id}>{p.name}</option>
                                                    )
@@ -822,6 +978,7 @@ export function DeckRevealPresenter({
                                  )
                               })}
                            </div>
+
                         </div>
                     )
                   })()}

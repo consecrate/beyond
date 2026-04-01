@@ -10,7 +10,7 @@ import Reveal from "reveal.js"
 import type { RevealApi } from "reveal.js"
 import { buttonVariants, cn } from "@beyond/design-system"
 import Link from "next/link"
-import { Star, CheckCircle2, Users } from "lucide-react"
+import { Star, CheckCircle2, Users, LogOut } from "lucide-react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
@@ -25,8 +25,11 @@ import {
   upsertPollVote,
   joinLiveSession,
   joinTeam,
+  leaveTeam,
+  purchasePowerup,
 } from "@/features/jazz/live-session-mutations"
-import { PlaydeckAccount, type LiveSession, type SessionPlayer, type Team } from "@/features/jazz/schema"
+import { PlaydeckAccount, type LiveSession, type SessionPlayer, type Team, type PowerupType, type Powerup } from "@/features/jazz/schema"
+import type { z } from "jazz-tools"
 import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
@@ -148,7 +151,32 @@ export function LiveRevealFollower({
     })
   }
 
+  const handleLeaveTeam = () => {
+    setTeamError(null)
+    startTeamJoin(() => {
+       if (!me.$isLoaded) {
+         setTeamError("Connecting...")
+         return
+       }
+       assertLoaded(me)
+       const res = leaveTeam(me, liveSession)
+       if (!res.ok) setTeamError(res.error)
+    })
+  }
 
+  const [buyError, setBuyError] = useState<string | null>(null)
+  const [buyPending, startBuy] = useTransition()
+
+  const handleBuyPowerup = (type: z.infer<typeof PowerupType>, cost: number) => {
+    setBuyError(null)
+    startBuy(() => {
+       if (!me.$isLoaded) return
+       assertLoaded(me)
+       if (!myPlayerRecord?.team_id) return
+       const res = purchasePowerup(me, liveSession, myPlayerRecord.team_id, type, cost)
+       if (!res.ok) setBuyError(res.error)
+    })
+  }
 
   useEffect(() => {
     activeSlideIndexRef.current = activeSlideIndex
@@ -315,6 +343,166 @@ export function LiveRevealFollower({
               </div>
             </div>
 
+            {(() => {
+               const gamePhase = liveSession.game_phase ?? "lobby"
+               
+               if (gamePhase === "playing" && myPlayerRecord?.team_id) {
+                  const myTeam = teams.find(t => t.id === myPlayerRecord?.team_id)
+                  const teamPowerups = myTeam?.powerups && myTeam.powerups.$isLoaded ? Array.from(myTeam.powerups).filter((pu): pu is Loaded<typeof Powerup> => !!(pu && pu.$isLoaded)) : []
+                  const myPowerups = teamPowerups.filter(pu => pu.owner_account_id === userId && !pu.is_used)
+                  
+                  return (
+                     <div className="absolute top-4 left-4 z-40 flex flex-col gap-2 pointer-events-none">
+                        <div className="flex items-center gap-2 rounded-full border border-border/40 bg-background/80 px-3 py-1.5 shadow-sm backdrop-blur-md">
+                           <span className="text-red-500 font-bold flex items-center gap-1.5"><Star className="h-4 w-4 fill-amber-500 text-amber-500 hidden" /> ❤️ {myTeam?.hp ?? 20}</span>
+                           <div className="w-px h-3 bg-border" />
+                           <span className="flex items-center gap-1 text-sm font-semibold opacity-80">{myTeam?.name}</span>
+                        </div>
+                        {myPowerups.length > 0 && (
+                           <div className="flex flex-col gap-1.5 pointer-events-auto">
+                              {myPowerups.map((pu, i) => {
+                                 if(!pu) return null
+                                 const puName = pu.type.replace("_", " ")
+                                 return (
+                                    <button key={i} className="flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm backdrop-blur-md transition-all hover:bg-primary/20 hover:scale-105 active:scale-95">
+                                       <Star className="h-3 w-3 fill-current" />
+                                       <span className="capitalize">{puName}</span>
+                                    </button>
+                                 )
+                              })}
+                           </div>
+                        )}
+                     </div>
+                  )
+               }
+               
+               if (gamePhase === "store" && myPlayerRecord?.team_id) {
+                  const myTeam = teams.find(t => t.id === myPlayerRecord?.team_id)
+                  const isLeader = myTeam?.leader_account_id === userId
+                  const teamPowerups = myTeam?.powerups && myTeam.powerups.$isLoaded ? Array.from(myTeam.powerups).filter((pu): pu is Loaded<typeof Powerup> => !!(pu && pu.$isLoaded)) : []
+                  
+                  const POWERUPS: {type: z.infer<typeof PowerupType>, name: string, desc: string, cost: number}[] = [
+                     {type: "1/4", name: "1/4", desc: "Eliminate 1 incorrect option.", cost: 20},
+                     {type: "healing_potion", name: "Healing Potion", desc: "Gift 1 HP to another team.", cost: 20},
+                     {type: "shield", name: "Shield", desc: "Block the next 1 HP of damage.", cost: 30},
+                     {type: "espionage", name: "Espionage", desc: "See what option 1st-place team hovers.", cost: 30},
+                     {type: "medkit", name: "Medkit", desc: "Restore 2 HP instantly.", cost: 40},
+                     {type: "double_damage", name: "Double Damage", desc: "Deal 2 HP instead of 1.", cost: 40},
+                     {type: "deflect", name: "Deflect", desc: "Bounce damage back to attacker.", cost: 50},
+                     {type: "critical_hit", name: "Critical Hit", desc: "Deals 3 HP if 100% accuracy.", cost: 60},
+                  ]
+                  
+                  if (isLeader) {
+                     return (
+                        <div className="absolute inset-0 z-50 flex flex-col bg-background p-4 md:p-8 overflow-auto animate-in fade-in zoom-in-95 duration-500" role="presentation">
+                           <div className="mx-auto w-full max-w-4xl flex flex-col items-center gap-6">
+                              <div className="text-center">
+                                 <h2 className="text-4xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-600">Powerup Store</h2>
+                                 <p className="mt-2 text-lg text-muted-foreground font-medium">Equip your team for the battle ahead.</p>
+                              </div>
+                              
+                              <div className="flex items-center gap-4 mb-4">
+                                 <div className="flex items-center gap-2 rounded-2xl bg-amber-500/10 px-6 py-3 border border-amber-500/20">
+                                    <Star className="h-6 w-6 text-amber-500 fill-amber-500" />
+                                    <span className="text-2xl font-bold text-amber-500">{myTeam?.banked_play_points ?? 0}</span>
+                                    <span className="text-sm font-semibold opacity-70 uppercase tracking-widest text-amber-500 ml-1 mt-1">PlayPoints</span>
+                                 </div>
+                              </div>
+                              
+                              {buyError && <p className="text-destructive font-medium bg-destructive/10 p-3 rounded-lg w-full text-center border border-destructive/20">{buyError}</p>}
+                              
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
+                                 {POWERUPS.map(pu => {
+                                    const canAfford = (myTeam?.banked_play_points ?? 0) >= pu.cost
+                                    return (
+                                       <button
+                                          key={pu.type}
+                                          disabled={buyPending || !canAfford}
+                                          onClick={() => handleBuyPowerup(pu.type, pu.cost)}
+                                          className={cn(
+                                             "relative flex flex-col text-left items-start gap-3 p-5 rounded-2xl border-2 transition-all duration-300",
+                                             canAfford 
+                                                ? "bg-card hover:bg-muted/50 border-border hover:border-primary/50 hover:shadow-lg hover:-translate-y-1 active:scale-95" 
+                                                : "bg-muted/20 border-border/50 opacity-60 cursor-not-allowed"
+                                          )}
+                                       >
+                                          <div className="flex items-center justify-between w-full">
+                                             <h3 className="font-bold text-base leading-tight">{pu.name}</h3>
+                                             <span className={cn("text-xs font-bold px-2 py-1 rounded-full", canAfford ? "bg-amber-500/20 text-amber-500" : "bg-muted text-muted-foreground")}>{pu.cost} PP</span>
+                                          </div>
+                                          <p className="text-xs text-muted-foreground leading-snug">{pu.desc}</p>
+                                       </button>
+                                    )
+                                 })}
+                              </div>
+                              
+                              {teamPowerups.length > 0 && (
+                                 <div className="w-full mt-6 bg-card/50 rounded-2xl p-6 border border-border">
+                                    <h3 className="text-sm font-bold uppercase tracking-widest opacity-70 mb-4">Acquired Inventory (Randomly Assigned)</h3>
+                                    <div className="flex flex-wrap gap-2">
+                                       {teamPowerups.map((pu, i) => {
+                                          const member = liveSession.joined_players && liveSession.joined_players.$isLoaded ? Array.from(liveSession.joined_players).find(p => p && p.$isLoaded && p.account_id === pu.owner_account_id) as Loaded<typeof SessionPlayer> | undefined : null
+                                          return (
+                                             <div key={i} className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-sm font-medium">
+                                                <span className="capitalize">{pu.type.replace("_", " ")}</span>
+                                                <span className="opacity-40">→</span>
+                                                <span className="font-semibold text-primary truncate max-w-[100px]">{member ? member.name : "Member"}</span>
+                                             </div>
+                                          )
+                                       })}
+                                    </div>
+                                 </div>
+                              )}
+                           </div>
+                        </div>
+                     )
+                  }
+                  
+                  // Regular Member Waiting View
+                  return (
+                     <div className="absolute inset-0 z-50 flex flex-col bg-background/95 backdrop-blur-md p-6 overflow-auto animate-in fade-in duration-500" role="presentation">
+                        <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center items-center text-center">
+                           <div className="w-16 h-16 rounded-2xl bg-amber-500/20 flex items-center justify-center mb-6 animate-pulse">
+                              <Star className="h-8 w-8 text-amber-500 fill-amber-500" />
+                           </div>
+                           <h2 className="text-3xl font-black uppercase tracking-widest mb-3">Gearing Up</h2>
+                           <p className="text-lg text-muted-foreground max-w-md">Your Team Leader is currently at the store supplying the team.</p>
+                           
+                           <div className="w-full mt-12 bg-card rounded-2xl p-6 border border-border text-left shadow-xl h-64 overflow-y-auto">
+                              <h3 className="text-xs font-bold uppercase tracking-wider opacity-50 mb-4 sticky top-0 bg-card z-10 py-1">Live Feed</h3>
+                              {teamPowerups.length === 0 ? (
+                                 <p className="text-sm italic opacity-50 flex items-center h-20">Waiting for purchases...</p>
+                              ) : (
+                                 <div className="flex flex-col gap-3">
+                                    {teamPowerups.map((pu, i) => {
+                                       const member = liveSession.joined_players && liveSession.joined_players.$isLoaded ? Array.from(liveSession.joined_players).find(p => p && p.$isLoaded && p.account_id === pu.owner_account_id) as Loaded<typeof SessionPlayer> | undefined : null
+                                       const isMe = pu.owner_account_id === userId
+                                       return (
+                                          <div key={i} className={cn("flex items-center justify-between p-3 rounded-xl border animate-in slide-in-from-bottom-4 fade-in duration-300", isMe ? "border-primary/50 bg-primary/10" : "border-border bg-background")}>
+                                             <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                                                   <Star className="h-4 w-4 opacity-50" />
+                                                </div>
+                                                <span className="font-semibold capitalize text-sm">{pu.type.replace("_", " ")}</span>
+                                             </div>
+                                             <div className="flex items-center gap-1.5 text-sm">
+                                                <span className="opacity-50">Received by</span>
+                                                <span className={cn("font-bold px-2 py-0.5 rounded-md", isMe ? "bg-primary text-primary-foreground" : "bg-muted")}>{isMe ? "YOU" : (member ? member.name : "Member")}</span>
+                                             </div>
+                                          </div>
+                                       )
+                                    })}
+                                 </div>
+                              )}
+                           </div>
+                        </div>
+                     </div>
+                  )
+               }
+               
+               return null
+            })()}
+
             {formationState === "open" ? (
                <div className="absolute inset-0 z-20 flex flex-col bg-background/95 backdrop-blur-sm p-6 overflow-auto" role="presentation">
                   <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
@@ -325,6 +513,31 @@ export function LiveRevealFollower({
                            </div>
                            <h2 className="text-3xl font-black tracking-tight mb-2">You&apos;re in!</h2>
                            <p className="text-muted-foreground">Waiting for the presenter to start the game.</p>
+                           {(() => {
+                              const myTeam = teams.find(t => t.id === myPlayerRecord?.team_id)
+                              const isLeader = myTeam?.leader_account_id === userId
+                              
+                              if (isLeader) {
+                                  return (
+                                     <div className="mt-8 flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-sm font-semibold text-amber-500">
+                                        <Star className="h-4 w-4 fill-amber-500/50" />
+                                        Team Leader
+                                     </div>
+                                  )
+                              }
+                              
+                              return (
+                                 <button
+                                    onClick={handleLeaveTeam}
+                                    disabled={teamPending}
+                                    className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors duration-300 rounded-full px-5")}
+                                 >
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    Leave Team
+                                 </button>
+                              )
+                           })()}
+                           {teamError && <p className="text-destructive text-sm font-medium mt-3 bg-destructive/10 p-2 rounded-md">{teamError}</p>}
                         </div>
                      ) : (
                         <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

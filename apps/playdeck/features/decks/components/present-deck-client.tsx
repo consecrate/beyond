@@ -23,6 +23,9 @@ import {
   startTeamFormation,
   assignTeamLeader,
   openTeamJoining,
+  autoAssignRemainingTeams,
+  startGameStore,
+  startGameplay,
 } from "@/features/jazz/live-session-mutations"
 import { LiveSession, PlaydeckAccount } from "@/features/jazz/schema"
 import { PresentRevealLoader } from "@/features/slides/present-reveal-loader"
@@ -243,6 +246,39 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     [me, liveSessionSub],
   )
 
+  const handleAutoAssignTeams = useCallback(
+    () => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      autoAssignRemainingTeams(me, session)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleStartGameStore = useCallback(
+    () => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      startGameStore(me, session)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleStartGameplay = useCallback(
+    () => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      startGameplay(me, session)
+    },
+    [me, liveSessionSub],
+  )
+
   const handleEndLive = useCallback(() => {
     tearDownLiveSession({ keepalive: false })
     setJoinCode(null)
@@ -317,6 +353,9 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
         onStartTeamFormation: handleStartTeamFormation,
         onAssignTeamLeader: handleAssignTeamLeader,
         onOpenTeamJoining: handleOpenTeamJoining,
+        onAutoAssignTeams: handleAutoAssignTeams,
+        onStartGameStore: handleStartGameStore,
+        onStartGameplay: handleStartGameplay,
       }}
     />
   )

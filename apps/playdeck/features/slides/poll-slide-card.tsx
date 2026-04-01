@@ -228,8 +228,8 @@ export function PollSlideCard({
   if (audienceTheater) {
     const orderedOptions = block.options.map((opt, index) => ({ opt, index }))
     const showAudienceSelection = myVote == null && !pollClosed
-    const showAudienceSubmitted = myVote != null && !pollClosed
-    const showResults = pollClosed
+    const showAudienceSubmitted = myVote != null
+    const showMissed = myVote == null && pollClosed
     const gridCols = audienceGridColsClass(orderedOptions.length)
     const submitDisabled = votePending || !voteAccountReady || !onVote
     const myOption = myVote != null ? block.options[myVote] : null
@@ -243,7 +243,9 @@ export function PollSlideCard({
               +10 PlayPoints
             </div>
             <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
-              Hang tight! Results will be revealed once everyone has finished.
+              {pollClosed
+                ? "The poll has ended. Look at the presenter's screen for results!"
+                : "Hang tight! Results will be revealed once everyone has finished."}
             </p>
             {myOption ? (
               <div className="w-full max-w-md rounded-none border border-border/80 bg-card/80 px-5 py-4 text-left">
@@ -291,57 +293,13 @@ export function PollSlideCard({
           </>
         ) : null}
 
-        {showResults ? (
-          <>
-            <AudienceTheaterPollPrompt block={block} />
-            <div className={cn("grid min-h-0 flex-1 auto-rows-fr gap-0", gridCols)}>
-              {orderedOptions.map(({ opt, index }, displayIndex) => {
-                const n = counts[index] ?? 0
-                const frac = totalVotes > 0 ? n / totalVotes : 0
-                const spanThird =
-                  orderedOptions.length === 3 && displayIndex === 2 ? "col-span-2" : ""
-                const myPick = myVote === index
-                return (
-                  <div
-                    key={index}
-                    className={cn(
-                      "relative flex min-h-28 min-w-0 flex-col overflow-hidden rounded-none border border-foreground/25 bg-card text-foreground",
-                      spanThird,
-                      myPick && "ring-2 ring-primary/45",
-                    )}
-                  >
-                    <div
-                      className="pointer-events-none absolute inset-y-0 left-0 rounded-none bg-primary/25 transition-[width] duration-500 ease-out"
-                      style={{ width: `${frac * 100}%` }}
-                      aria-hidden
-                    />
-                    <div className="relative z-10 flex h-full min-h-0 flex-1 flex-col justify-between gap-2 px-3 py-3 sm:px-4 sm:py-3.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="tabular-nums text-xs font-medium opacity-80">
-                          {displayIndex + 1}
-                        </span>
-                        {myPick ? (
-                          <span className="rounded-full bg-white/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
-                            Your choice
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="min-w-0 flex-1 text-sm font-medium leading-snug sm:text-base">
-                        <InlineMd markdown={opt} className="[&_p]:mb-0 [&_p]:inline" />
-                      </div>
-                      <div className="flex items-end justify-between gap-2 tabular-nums">
-                        <span className="text-sm font-semibold">{formatPollPercent(frac)}</span>
-                        <span className="text-xs opacity-90">{n}</span>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border/60 px-3 py-3 text-xs text-muted-foreground sm:px-4">
-              <span>{totalVotes} responses</span>
-            </div>
-          </>
+        {showMissed ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+            <p className="text-2xl font-bold text-foreground">Poll Closed</p>
+            <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
+              You didn't cast a vote in time. Look at the presenter's screen for results!
+            </p>
+          </div>
         ) : null}
 
         {voteError ? (

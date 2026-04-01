@@ -15,6 +15,8 @@ import {
   SessionPlayer,
   QuestionSubmission,
   Team,
+  Powerup,
+  type PowerupType,
 } from "@/features/jazz/schema"
 
 export type QuestionLiveStatus = "idle" | "open" | "revealed"
@@ -739,6 +741,198 @@ export function joinTeam(
   }
 
   myPlayerRecord.$jazz.applyDiff({ team_id: teamId })
+  return { ok: true }
+}
+
+export function leaveTeam(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  
+  const players = liveSession.joined_players
+  if (!players) return { ok: false, error: "Not in session" }
+  assertLoaded(players)
+
+  let myPlayerRecord: Loaded<typeof SessionPlayer> | null = null
+
+  for (const p of players) {
+    if (!p) continue
+    if (!p.$isLoaded) continue
+    if (p.account_id === me.$jazz.id) {
+      myPlayerRecord = p
+      break
+    }
+  }
+
+  if (!myPlayerRecord) return { ok: false, error: "You must join the session before leaving a team." }
+
+  myPlayerRecord.$jazz.applyDiff({ team_id: undefined })
+  return { ok: true }
+}
+
+export function autoAssignRemainingTeams(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) return
+
+  const teams = liveSession.teams
+  const players = liveSession.joined_players
+
+  if (!teams || !players) return
+  assertLoaded(teams)
+  assertLoaded(players)
+
+  const activeTeams = [...teams].filter((t): t is Loaded<typeof Team> => !!t && t.$isLoaded)
+  if (activeTeams.length === 0) return
+
+  const activePlayers = [...players].filter((p): p is Loaded<typeof SessionPlayer> => !!p && p.$isLoaded)
+  const unassignedPlayers = activePlayers.filter(p => !p.team_id)
+
+  if (unassignedPlayers.length === 0) return
+
+  const teamCounts = new Map<string, number>()
+  activeTeams.forEach(t => teamCounts.set(t.id, 0))
+  
+  activePlayers.forEach(p => {
+    if (p.team_id && teamCounts.has(p.team_id)) {
+      teamCounts.set(p.team_id, teamCounts.get(p.team_id)! + 1)
+    }
+  })
+
+  // Distribute unassigned players to teams with minimum members
+  for (const player of unassignedPlayers) {
+     let minTeamId = activeTeams[0].id
+     let minCount = teamCounts.get(minTeamId)!
+     
+     for (const t of activeTeams) {
+        const count = teamCounts.get(t.id)!
+        if (count < minCount) {
+           minCount = count
+           minTeamId = t.id
+        }
+     }
+     
+     player.$jazz.applyDiff({ team_id: minTeamId })
+     teamCounts.set(minTeamId, minCount + 1)
+  }
+}
+
+export function startGameStore(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) return
+
+  const teams = liveSession.teams
+  const players = liveSession.joined_players
+
+  if (!teams || !players) return
+  assertLoaded(teams)
+  assertLoaded(players)
+
+  const activeTeams = [...teams].filter((t): t is Loaded<typeof Team> => !!t && t.$isLoaded)
+  const activePlayers = [...players].filter((p): p is Loaded<typeof SessionPlayer> => !!p && p.$isLoaded)
+
+  for (const t of activeTeams) {
+    let teamPoints = 0
+    const teamMembers = activePlayers.filter(p => p.team_id === t.id)
+    for (const member of teamMembers) {
+      teamPoints += member.play_points ?? 0
+    }
+    
+    t.$jazz.applyDiff({
+      hp: 20,
+      banked_play_points: teamPoints,
+      powerups: co.list(Powerup).create([], liveSession.$jazz.owner)
+    })
+  }
+
+  liveSession.$jazz.applyDiff({ game_phase: "store" })
+}
+
+export function startGameplay(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) return
+
+  liveSession.$jazz.applyDiff({ game_phase: "playing" })
+}
+
+export function purchasePowerup(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  teamId: string,
+  powerupType: z.infer<typeof PowerupType>,
+  cost: number,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  const teams = liveSession.teams
+  if (!teams) return { ok: false, error: "No teams found." }
+  assertLoaded(teams)
+
+  let myTeam: Loaded<typeof Team> | null = null
+  for (const t of teams) {
+    if (!t || !t.$isLoaded) continue
+    if (t.id === teamId) {
+      myTeam = t
+      break
+    }
+  }
+
+  if (!myTeam) return { ok: false, error: "Team not found." }
+  if (myTeam.leader_account_id !== me.$jazz.id) {
+    return { ok: false, error: "Only the Team Leader can purchase powerups." }
+  }
+
+  const banked = myTeam.banked_play_points ?? 0
+  if (banked < cost) {
+    return { ok: false, error: "Not enough PlayPoints." }
+  }
+
+  const players = liveSession.joined_players
+  if (!players) return { ok: false, error: "No players in session." }
+  assertLoaded(players)
+
+  const teamMembers = [...players].filter((p): p is Loaded<typeof SessionPlayer> => 
+    !!p && p.$isLoaded && p.team_id === teamId
+  )
+
+  if (teamMembers.length === 0) return { ok: false, error: "No members to receive powerup." }
+
+  // Assign randomly
+  const randomIndex = Math.floor(Math.random() * teamMembers.length)
+  const receiver = teamMembers[randomIndex]
+
+  myTeam.$jazz.applyDiff({ banked_play_points: banked - cost })
+  
+  if (!myTeam.$jazz.has("powerups") || !myTeam.powerups) {
+     myTeam.$jazz.set("powerups", co.list(Powerup).create([], liveSession.$jazz.owner))
+  }
+  
+  const powerupsList = myTeam.powerups
+  if (!powerupsList) return { ok: false, error: "Failed to initialize powerups" }
+  assertLoaded(powerupsList)
+  
+  powerupsList.$jazz.push(
+    Powerup.create({
+      type: powerupType,
+      owner_account_id: receiver.account_id,
+      is_used: false,
+    }, liveSession.$jazz.owner)
+  )
+
   return { ok: true }
 }
 
