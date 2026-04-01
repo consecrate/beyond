@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 
 import type { QuestionBlock } from "@/features/decks/parse-slide-question"
 import { slideMarkdownToSafeHtml } from "@/features/decks/render-slide-markdown"
@@ -14,6 +14,24 @@ type QuestionOptionOrderRow = {
   canonicalIndex: number
   text: string
   isCorrect: boolean
+}
+
+type QuestionResultTone = "correct" | "wrong"
+
+const questionResultToneClasses: Record<
+  QuestionResultTone,
+  { container: string; fill: string }
+> = {
+  correct: {
+    container:
+      "border-emerald-600/50 bg-emerald-500/12 dark:border-emerald-500/45 dark:bg-emerald-500/18",
+    fill: "bg-emerald-600/30 dark:bg-emerald-500/35",
+  },
+  wrong: {
+    container:
+      "border-red-500/45 bg-red-500/12 dark:border-red-500/45 dark:bg-red-500/18",
+    fill: "bg-red-500/35 dark:bg-red-500/35",
+  },
 }
 
 function InlineMd({ markdown, className }: { markdown: string; className?: string }) {
@@ -32,7 +50,7 @@ function formatPercent(frac: number): string {
 }
 
 function formatAnsweredCount(n: number): string {
-  return `${n} answered`
+  return `${n} responses`
 }
 
 function hashSeed(input: string): number {
@@ -72,7 +90,7 @@ function shuffledQuestionRows(
   const rand = mulberry32(hashSeed(`${block.questionKey}:${audienceAccountId}`))
   for (let i = next.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1))
-    ;[next[i], next[j]] = [next[j], next[i]]
+      ;[next[i], next[j]] = [next[j], next[i]]
   }
   return next
 }
@@ -91,64 +109,128 @@ function QuestionResultsRow({
   myPick: boolean
 }) {
   const frac = totalAnswers > 0 ? count / totalAnswers : 0
+  const tone: QuestionResultTone = row.isCorrect ? "correct" : "wrong"
+  const toneClasses = questionResultToneClasses[tone]
 
   return (
     <div
+      data-question-result-tone={tone}
       className={cn(
-        "relative overflow-hidden rounded-3xl border transition-colors",
-        row.isCorrect
-          ? "border-primary/65 bg-primary/8 ring-1 ring-primary/20"
-          : "border-border/90 bg-card",
-        myPick && "ring-2 ring-primary/35",
+        "relative overflow-hidden rounded-none border transition-colors",
+        toneClasses.container,
+        myPick && "ring-2 ring-amber-500/50 dark:ring-amber-400/45",
       )}
     >
       <div
+        data-question-result-fill={tone}
         className={cn(
           "pointer-events-none absolute inset-y-0 left-0 transition-[width] duration-500 ease-out",
-          frac >= 0.999 ? "rounded-3xl" : "rounded-l-3xl",
-          row.isCorrect ? "bg-primary/30" : "bg-muted/55",
+          "rounded-none",
+          toneClasses.fill,
         )}
         style={{ width: `${frac * 100}%` }}
         aria-hidden
       />
       <div className="relative z-10 flex gap-3 px-4 py-4">
-        <span
-          className={cn(
-            "mt-0.5 w-4 shrink-0 text-center text-xs font-medium tabular-nums text-muted-foreground",
-            row.isCorrect && "font-semibold text-foreground",
-          )}
-        >
+        <span className="mt-0.5 w-4 shrink-0 text-center text-xs font-medium tabular-nums text-muted-foreground">
           {indexLabel}
         </span>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="text-base leading-snug" data-question-option-text>
             <InlineMd markdown={row.text} className="[&_p]:mb-0 [&_p]:inline" />
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {row.isCorrect ? (
-              <span className="rounded-full bg-primary/12 px-2 py-1 font-medium text-primary">
-                Correct answer
-              </span>
-            ) : null}
-            {myPick ? (
+          {myPick ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="rounded-full bg-muted/80 px-2 py-1 font-medium text-foreground">
-                Your answer
+                Your choice
               </span>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
         <div className="shrink-0 text-right">
-          <p
-            className={cn(
-              "tabular-nums text-sm text-muted-foreground",
-              row.isCorrect && "font-semibold text-foreground",
-            )}
-          >
-            {formatPercent(frac)}
+          <p className="tabular-nums text-sm text-muted-foreground">{formatPercent(frac)}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Neutral/default audience tile style for viewer-facing MCQ options. */
+function audienceOptionTileClass(): string {
+  return "bg-card text-foreground"
+}
+
+function audienceGridColsClass(optionCount: number): string {
+  return optionCount >= 5 ? "grid-cols-3" : "grid-cols-2"
+}
+
+/** Shared Kahoot/Gimkit-style prompt typography for the colored question band. */
+const theaterPromptProseClass =
+  "question-theater-prompt w-full max-w-none px-5 text-center text-primary-foreground sm:px-8"
+
+function AudienceTheaterQuestionStrip({ block }: { block: QuestionBlock }) {
+  const html = slideMarkdownToSafeHtml(block.prompt)
+
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 flex-col items-center justify-center overflow-y-auto bg-primary",
+        /* Slightly shorter band to give answer tiles more vertical room. */
+        "min-h-[min(40vh,44%)] py-5 sm:min-h-[min(36vh,40%)] sm:py-6 md:py-7",
+        "text-primary-foreground",
+      )}
+    >
+      {block.kicker ? (
+        <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.22em] text-primary-foreground/85 sm:mb-4 sm:text-sm">
+          {block.kicker}
+        </p>
+      ) : null}
+      <div
+        className={theaterPromptProseClass}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
+  )
+}
+
+function AudienceQuestionRevealFeedback({
+  isCorrect,
+  hasAnswered,
+  correctRow,
+}: {
+  isCorrect: boolean
+  hasAnswered: boolean
+  correctRow: QuestionOptionOrderRow | null
+}) {
+  const toneClass = hasAnswered
+    ? isCorrect
+      ? "bg-emerald-500/12 text-emerald-950 dark:bg-emerald-500/20 dark:text-emerald-50"
+      : "bg-red-500/12 text-red-950 dark:bg-red-500/20 dark:text-red-50"
+    : "bg-card text-foreground"
+
+  const title = hasAnswered ? (isCorrect ? "Correct!" : "Incorrect") : "No response submitted"
+  const subtitle = hasAnswered
+    ? isCorrect
+      ? "Nice work - you picked the right answer."
+      : "You can still learn from this one."
+    : "The question has ended. Here is the correct option."
+
+  return (
+    <div className={cn("flex min-h-0 flex-1 flex-col items-center justify-center px-6 py-8", toneClass)}>
+      <div className="w-full max-w-2xl space-y-5 text-center">
+        <p className="text-3xl font-bold sm:text-4xl">{title}</p>
+        <p className="text-base leading-relaxed opacity-90 sm:text-lg">{subtitle}</p>
+        <div className="mx-auto w-full max-w-xl rounded-none border border-current/25 bg-background/80 px-5 py-4 text-left text-foreground dark:bg-background/50">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Correct option
           </p>
-          <p className="mt-1 tabular-nums text-xs text-muted-foreground">
-            {count}
-          </p>
+          {correctRow ? (
+            <div className="text-lg font-medium leading-relaxed">
+              <InlineMd markdown={correctRow.text} className="[&_p]:mb-0 [&_p]:inline" />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No correct option configured.</p>
+          )}
         </div>
       </div>
     </div>
@@ -159,6 +241,7 @@ export function QuestionSlideCard({
   block,
   variant,
   state,
+  resultsVisible,
   layout = "card",
   counts,
   answeredCount,
@@ -174,6 +257,7 @@ export function QuestionSlideCard({
   block: QuestionBlock
   variant: QuestionSlideVariant
   state: QuestionCardState
+  resultsVisible?: boolean
   layout?: QuestionSlideLayout
   counts: number[]
   answeredCount: number
@@ -186,8 +270,8 @@ export function QuestionSlideCard({
   onStart?: () => void
   onStop?: () => void
 }) {
-  const [selected, setSelected] = useState<number | null>(null)
   const overlay = layout === "overlay"
+  const audienceTheater = overlay && variant === "audience"
   const orderedRows = useMemo(
     () => shuffledQuestionRows(block, audienceAccountId, variant),
     [audienceAccountId, block, variant],
@@ -199,14 +283,128 @@ export function QuestionSlideCard({
     variant === "audience" && state === "open" && myAnswer == null
   const showAudienceSubmitted =
     variant === "audience" && state === "open" && myAnswer != null
+  const showResults = resultsVisible ?? state === "revealed"
   const showPresenterQuestion =
     variant === "presenter" && (state === "idle" || state === "open")
+  const showPresenterClosedAwaitingSessionEnd =
+    variant === "presenter" && state === "revealed" && !showResults
   const showPresenterOpen = variant === "presenter" && state === "open"
-  const showResults = state === "revealed"
+  const showAudienceAwaitingSessionEnd =
+    variant === "audience" && state === "revealed" && !showResults
+  const hideOptionRowsUntilReveal =
+    overlay && variant === "presenter" && !showResults
   const totalAnswers = counts.reduce((sum, count) => sum + count, 0)
   const myRow = orderedRows.find((row) => row.canonicalIndex === myAnswer) ?? null
-  const selectedRow =
-    orderedRows.find((row) => row.canonicalIndex === selected) ?? null
+  const correctRow = orderedRows.find((row) => row.isCorrect) ?? null
+  const revealedHasAnswer = myAnswer != null
+  const revealedIsCorrect = myAnswer != null && block.options[myAnswer]?.isCorrect === true
+
+  const canSubmit =
+    Boolean(onSubmit) && accountReady && !submitPending
+
+  if (audienceTheater) {
+    const gridCols = audienceGridColsClass(orderedRows.length)
+    const submitDisabled = !canSubmit
+
+    return (
+      <article className="flex h-full min-h-0 w-full flex-col">
+        {showIdle ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="text-2xl font-bold text-foreground">Get ready!</p>
+            <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
+              The question will begin shortly. Stay tuned.
+            </p>
+          </div>
+        ) : null}
+
+        {showAudienceSubmitted ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+            <p className="text-2xl font-bold text-foreground">Response received!</p>
+            <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
+              Hang tight! Results will be revealed once everyone has finished.
+            </p>
+            {myRow ? (
+              <div className="w-full max-w-md rounded-none border border-border/80 bg-card/80 px-5 py-4 text-left">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Your choice
+                </p>
+                <div className="text-lg font-medium leading-relaxed text-foreground">
+                  <InlineMd markdown={myRow.text} className="[&_p]:mb-0 [&_p]:inline" />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showAudienceSelection ? (
+          <>
+            <AudienceTheaterQuestionStrip block={block} />
+            <div
+              className={cn(
+                "grid min-h-0 flex-1 auto-rows-fr gap-0",
+                gridCols,
+              )}
+            >
+              {orderedRows.map((row, displayIndex) => {
+                const tileClass = audienceOptionTileClass()
+                const spanThird =
+                  orderedRows.length === 3 && displayIndex === 2 ? "col-span-2" : ""
+                return (
+                  <button
+                    key={row.canonicalIndex}
+                    type="button"
+                    disabled={submitDisabled}
+                    className={cn(
+                      "flex min-h-0 flex-col items-center justify-center rounded-none border border-foreground/25 px-3 py-4 text-center text-base font-medium leading-snug transition-[opacity,transform,filter] sm:px-4 sm:py-5 sm:text-base",
+                      spanThird,
+                      tileClass,
+                      submitDisabled &&
+                      "cursor-not-allowed opacity-60",
+                      !submitDisabled &&
+                      "cursor-pointer hover:brightness-105 active:scale-[0.99]",
+                    )}
+                    onClick={() => {
+                      if (submitDisabled || !onSubmit) return
+                      onSubmit(row.canonicalIndex)
+                    }}
+                  >
+                    <span className="line-clamp-6 wrap-anywhere" data-question-option-text>
+                      <InlineMd
+                        markdown={row.text}
+                        className="[&_p]:mb-0 [&_p]:inline" />
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        ) : null}
+
+        {showResults ? (
+          <AudienceQuestionRevealFeedback
+            isCorrect={revealedIsCorrect}
+            hasAnswered={revealedHasAnswer}
+            correctRow={correctRow}
+          />
+        ) : null}
+
+        {showAudienceAwaitingSessionEnd ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="text-2xl font-bold text-foreground">Question closed</p>
+            <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
+              Results stay hidden until the live session ends.
+            </p>
+          </div>
+        ) : null}
+
+        {submitError ? (
+          <p className="shrink-0 px-3 pb-2 text-center text-sm text-destructive sm:px-4">
+            {submitError}
+          </p>
+        ) : null}
+      </article>
+    )
+  }
 
   return (
     <article
@@ -214,13 +412,12 @@ export function QuestionSlideCard({
         "w-full",
         overlay
           ? "max-w-lg px-0 py-0"
-          : "max-w-4xl rounded-xl border border-border/80 bg-card/40 px-4 py-4",
+          : "max-w-4xl rounded-none border border-border/80 bg-card/40 px-4 py-4",
       )}
     >
       <div
         className={cn(
-          "flex items-start justify-between gap-3",
-          overlay ? "mb-6" : "mb-3",
+          "flex items-start justify-between gap-3"
         )}
       >
         <div className="min-w-0 space-y-2">
@@ -232,15 +429,18 @@ export function QuestionSlideCard({
               {block.kicker}
             </p>
           ) : null}
-          {block.title ? (
-            <p className="text-sm font-medium text-foreground/90">{block.title}</p>
-          ) : null}
         </div>
         {variant === "presenter" && overlay ? (
           showIdle ? (
             onStart ? (
-              <Button type="button" variant="outline" size="sm" onClick={onStart}>
-                Start
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-none"
+                onClick={onStart}
+              >
+                Launch Question
               </Button>
             ) : null
           ) : showPresenterOpen ? (
@@ -249,50 +449,26 @@ export function QuestionSlideCard({
                 {formatAnsweredCount(answeredCount)}
               </span>
               {onStop ? (
-                <Button type="button" variant="outline" size="sm" onClick={onStop}>
-                  Stop
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-none"
+                  onClick={onStop}
+                >
+                  End & Reveal
                 </Button>
               ) : null}
             </div>
           ) : state === "revealed" ? (
-            <span className="text-xs text-muted-foreground">Final results</span>
+            <span className="text-xs text-muted-foreground">
+              {showResults ? "Final results" : "Question closed"}
+            </span>
           ) : null
         ) : null}
       </div>
 
-      {showIdle && variant === "audience" ? (
-        <div className="rounded-3xl border border-border/80 bg-card/60 px-5 py-6 text-center">
-          <p className="text-base font-medium text-foreground">
-            Question coming up
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Start the question when you are ready for the audience to answer.
-          </p>
-        </div>
-      ) : null}
-
-      {showAudienceSubmitted ? (
-        <div className="rounded-3xl border border-border/80 bg-card/60 px-5 py-6 text-center">
-          <p className="text-base font-medium text-foreground">
-            Thanks, your answer has been submitted.
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Waiting for the presenter to reveal the results.
-          </p>
-          {myRow ? (
-            <div className="mt-4 rounded-2xl border border-border/80 bg-background/70 px-4 py-3 text-left">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Your answer
-              </p>
-              <div className="text-sm leading-relaxed text-foreground">
-                <InlineMd markdown={myRow.text} className="[&_p]:mb-0 [&_p]:inline" />
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {showAudienceSelection || showPreview || showResults || showPresenterQuestion ? (
+      {showPreview || showResults || showPresenterQuestion || showPresenterClosedAwaitingSessionEnd ? (
         <div className="space-y-3">
           <div
             className={cn(
@@ -304,8 +480,8 @@ export function QuestionSlideCard({
           >
             <div
               className={cn(
-                "prose prose-invert max-w-none prose-p:leading-relaxed",
-                overlay && "prose-p:text-2xl prose-p:font-medium md:prose-p:text-3xl",
+                "question-overlay-prompt max-w-none",
+                !overlay && "text-sm leading-relaxed",
               )}
               dangerouslySetInnerHTML={{
                 __html: slideMarkdownToSafeHtml(block.prompt),
@@ -313,56 +489,46 @@ export function QuestionSlideCard({
             />
           </div>
 
-          <ul className={cn(overlay ? "mb-6 space-y-3" : "mb-4 space-y-3")}>
-            {orderedRows.map((row, displayIndex) => {
-              const id = `${block.questionKey}-${layout}-question-${row.canonicalIndex}`
-              const count = counts[row.canonicalIndex] ?? 0
-              const myPick = myAnswer === row.canonicalIndex
-              return (
-                <li key={row.canonicalIndex}>
-                  {showResults ? (
-                    <QuestionResultsRow
-                      indexLabel={displayIndex + 1}
-                      row={row}
-                      count={count}
-                      totalAnswers={totalAnswers}
-                      myPick={myPick}
-                    />
-                  ) : showPreview || showPresenterQuestion ? (
-                    <div className="rounded-3xl border border-border/90 bg-card/70 px-4 py-4">
-                      <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                        Answer {displayIndex + 1}
-                      </p>
-                      <div
-                        className="text-base leading-snug"
-                        data-question-option-text
-                      >
-                        <InlineMd
-                          markdown={row.text}
-                          className="[&_p]:mb-0 [&_p]:inline"
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <label
-                      htmlFor={id}
-                      className={cn(
-                        "flex cursor-pointer gap-3 rounded-3xl border border-border/90 bg-card/70 px-4 py-4 transition-colors",
-                        selected === row.canonicalIndex &&
-                          "border-primary ring-2 ring-primary/35 bg-muted/20",
-                        "hover:border-ring/50 hover:bg-muted/25",
-                      )}
-                    >
-                      <input
-                        id={id}
-                        type="radio"
-                        name={`${block.questionKey}-${layout}`}
-                        checked={selected === row.canonicalIndex}
-                        onChange={() => setSelected(row.canonicalIndex)}
-                        className="mt-1 size-4 shrink-0 accent-primary"
+          {hideOptionRowsUntilReveal ? null : (
+            <ul className={cn(overlay ? "mb-8 space-y-3" : "mb-4 space-y-3")}>
+              {orderedRows.map((row, displayIndex) => {
+                const count = counts[row.canonicalIndex] ?? 0
+                const myPick = myAnswer === row.canonicalIndex
+                return (
+                  <li key={row.canonicalIndex}>
+                    {showResults ? (
+                      <QuestionResultsRow
+                        indexLabel={displayIndex + 1}
+                        row={row}
+                        count={count}
+                        totalAnswers={totalAnswers}
+                        myPick={myPick}
                       />
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    ) : overlay ? (
+                      <div className="relative overflow-hidden rounded-none border border-border/90 bg-card">
+                        <div className="relative z-10 flex gap-3 px-4 py-4">
+                          <span className="mt-1 w-4 shrink-0 text-center text-xs font-medium tabular-nums text-muted-foreground">
+                            {displayIndex + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div
+                              className="text-base leading-snug"
+                              data-question-option-text
+                            >
+                              <InlineMd
+                                markdown={row.text}
+                                className="[&_p]:mb-0 [&_p]:inline"
+                              />
+                            </div>
+                          </div>
+                          <span className="shrink-0 tabular-nums text-sm text-muted-foreground">
+                            {formatPercent(0)}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-none border border-border/90 bg-card/70 px-4 py-4">
+                        <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
                           Answer {displayIndex + 1}
                         </p>
                         <div
@@ -375,12 +541,12 @@ export function QuestionSlideCard({
                           />
                         </div>
                       </div>
-                    </label>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </div>
       ) : null}
 
@@ -391,7 +557,7 @@ export function QuestionSlideCard({
             overlay ? "text-center text-xs" : "mb-2 text-xs",
           )}
         >
-          Presenter preview — start the question when you want the audience to answer.
+          Preview mode — Launch the question when you want the audience to participate.
         </p>
       ) : null}
 
@@ -402,7 +568,18 @@ export function QuestionSlideCard({
             overlay ? "text-center text-xs" : "mb-2 text-xs",
           )}
         >
-          Answers are coming in live. Stop the question to reveal the results.
+          Responses are coming in live. End the question to reveal results and the correct answer.
+        </p>
+      ) : null}
+
+      {showPresenterClosedAwaitingSessionEnd ? (
+        <p
+          className={cn(
+            "text-muted-foreground",
+            overlay ? "text-center text-xs" : "mb-2 text-xs",
+          )}
+        >
+          Question is closed. Results stay hidden until the live session ends.
         </p>
       ) : null}
 
@@ -425,13 +602,6 @@ export function QuestionSlideCard({
           )}
         >
           <span>{formatAnsweredCount(answeredCount)}</span>
-          {variant === "audience" && myAnswer != null ? (
-            <span className="font-medium text-foreground">
-              {block.options[myAnswer]?.isCorrect
-                ? "You answered correctly."
-                : "You answered incorrectly."}
-            </span>
-          ) : null}
         </div>
       ) : null}
 
@@ -439,28 +609,6 @@ export function QuestionSlideCard({
         <p className={cn("text-sm text-destructive", overlay && "text-center")}>
           {submitError}
         </p>
-      ) : null}
-
-      {showAudienceSelection ? (
-        <div className="flex justify-end pt-2">
-          <Button
-            type="button"
-            size={overlay ? "default" : "sm"}
-            disabled={selected == null || submitPending || !accountReady || !onSubmit}
-            onClick={() => {
-              if (selected == null || !onSubmit) return
-              onSubmit(selected)
-            }}
-          >
-            {submitPending
-              ? "Submitting…"
-              : !accountReady
-                ? "Connecting…"
-                : selectedRow
-                  ? "Submit answer"
-                  : "Select an answer"}
-          </Button>
-        </div>
       ) : null}
     </article>
   )

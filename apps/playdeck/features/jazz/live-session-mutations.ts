@@ -12,6 +12,7 @@ import {
   PlaydeckAccount,
   PollVote,
   QuestionState,
+  SessionPlayer,
   QuestionSubmission,
 } from "@/features/jazz/schema"
 
@@ -42,7 +43,9 @@ export function startLiveSession(
       markdown,
       activeSlideIndex: idx,
       status: "live",
+      is_lobby_visible: true,
       presenter_account_id: me.$jazz.id,
+      joined_players: co.list(SessionPlayer).create([], g),
       poll_votes: co.list(PollVote).create([], g),
       closed_poll_keys: co.list(z.string()).create([], g),
       question_submissions: co.list(QuestionSubmission).create([], g),
@@ -471,4 +474,75 @@ export function aggregateQuestionCounts(
     if (i >= 0 && i < optionCount) counts[i]++
   }
   return counts
+}
+
+export function joinLiveSession(
+  me: Loaded<typeof PlaydeckAccount>,
+  liveSession: Loaded<typeof LiveSession>,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (me.$jazz.id === liveSession.presenter_account_id) return
+  if (!liveSession.$jazz.has("joined_players")) return
+
+  const players = liveSession.joined_players
+  if (!players) return
+  assertLoaded(players)
+
+  for (const p of players) {
+    assertLoaded(p)
+    if (p.account_id === me.$jazz.id) {
+      return // Already joined
+    }
+  }
+
+  const profile = me.profile
+  assertLoaded(profile)
+
+  players.$jazz.push(
+    SessionPlayer.create(
+      { account_id: me.$jazz.id, name: profile.name },
+      liveSession.$jazz.owner,
+    )
+  )
+}
+
+export function kickPlayer(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  accountId: string,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (me.$jazz.id !== liveSession.presenter_account_id) return
+
+  const players = liveSession.joined_players
+  if (players) {
+    assertLoaded(players)
+    const list = [...players]
+    const toRemove: number[] = []
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i]
+      assertLoaded(p)
+      if (p.account_id === accountId) {
+        toRemove.push(i)
+      }
+    }
+    for (const idx of toRemove.sort((a, b) => b - a)) {
+      players.$jazz.splice(idx, 1)
+    }
+  }
+}
+
+export function setLobbyVisible(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  visible: boolean,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) return
+  liveSession.$jazz.applyDiff({ is_lobby_visible: visible })
 }

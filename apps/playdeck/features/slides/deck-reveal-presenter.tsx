@@ -148,10 +148,10 @@ function GridSlideThumbnail({
     const counts =
       liveSession && status === "revealed"
         ? aggregateQuestionCounts(
-            liveSession,
-            slide.question.questionKey,
-            slide.question.options.length,
-          )
+          liveSession,
+          slide.question.questionKey,
+          slide.question.options.length,
+        )
         : Array.from({ length: slide.question.options.length }, () => 0)
 
     return (
@@ -262,7 +262,7 @@ export function DeckRevealPresenter({
   const revealRef = useRef<HTMLDivElement>(null)
   const deckApiRef = useRef<RevealApi | null>(null)
   const initialIndexRef = useRef(initialSlideIndex)
-  const onSlideChangedHandlerRef = useRef<() => void>(() => {})
+  const onSlideChangedHandlerRef = useRef<() => void>(() => { })
   const liveSlideSyncRef = useRef<((index: number) => void) | undefined>(
     undefined,
   )
@@ -484,7 +484,7 @@ export function DeckRevealPresenter({
               className={cn(
                 "absolute inset-0 z-0 flex flex-col",
                 view !== "slide" &&
-                  "pointer-events-none invisible opacity-0",
+                "pointer-events-none invisible opacity-0",
               )}
               aria-hidden={view !== "slide"}
             >
@@ -552,11 +552,11 @@ export function DeckRevealPresenter({
                         onClosePoll={
                           live.onClosePoll
                             ? () => {
-                                const close = live.onClosePoll
-                                if (close) {
-                                  close(slides[activeIndex].poll!.pollKey)
-                                }
+                              const close = live.onClosePoll
+                              if (close) {
+                                close(slides[activeIndex].poll!.pollKey)
                               }
+                            }
                             : undefined
                         }
                       />
@@ -588,53 +588,48 @@ export function DeckRevealPresenter({
                 <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
                   <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
                     {live?.isActive && live.liveSession ? (
-                      <QuestionSlideCard
-                        layout="overlay"
-                        block={slides[activeIndex].question!}
-                        variant="presenter"
-                        state={questionStatus(
+                      (() => {
+                        const question = slides[activeIndex].question!
+                        const state = questionStatus(
                           live.liveSession,
-                          slides[activeIndex].question!.questionKey,
-                        )}
-                        counts={
-                          questionStatus(
+                          question.questionKey,
+                        )
+                        const resultsVisible =
+                          state === "revealed" && live.liveSession.status === "ended"
+                        const counts = resultsVisible
+                          ? aggregateQuestionCounts(
                             live.liveSession,
-                            slides[activeIndex].question!.questionKey,
-                          ) === "revealed"
-                            ? aggregateQuestionCounts(
-                                live.liveSession,
-                                slides[activeIndex].question!.questionKey,
-                                slides[activeIndex].question!.options.length,
-                              )
-                            : Array.from(
-                                {
-                                  length: slides[activeIndex].question!.options.length,
-                                },
-                                () => 0,
-                              )
-                        }
-                        answeredCount={countQuestionAnswers(
-                          live.liveSession,
-                          slides[activeIndex].question!.questionKey,
-                        )}
-                        myAnswer={null}
-                        onStart={
-                          live.onStartQuestion
-                            ? () =>
-                                void live.onStartQuestion?.(
-                                  slides[activeIndex].question!.questionKey,
-                                )
-                            : undefined
-                        }
-                        onStop={
-                          live.onStopQuestion
-                            ? () =>
-                                void live.onStopQuestion?.(
-                                  slides[activeIndex].question!.questionKey,
-                                )
-                            : undefined
-                        }
-                      />
+                            question.questionKey,
+                            question.options.length,
+                          )
+                          : Array.from({ length: question.options.length }, () => 0)
+
+                        return (
+                          <QuestionSlideCard
+                            layout="overlay"
+                            block={question}
+                            variant="presenter"
+                            state={state}
+                            resultsVisible={resultsVisible}
+                            counts={counts}
+                            answeredCount={countQuestionAnswers(
+                              live.liveSession,
+                              question.questionKey,
+                            )}
+                            myAnswer={null}
+                            onStart={
+                              live.onStartQuestion
+                                ? () => void live.onStartQuestion?.(question.questionKey)
+                                : undefined
+                            }
+                            onStop={
+                              live.onStopQuestion
+                                ? () => void live.onStopQuestion?.(question.questionKey)
+                                : undefined
+                            }
+                          />
+                        )
+                      })()
                     ) : (
                       <QuestionSlideCard
                         layout="overlay"

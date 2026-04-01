@@ -11,7 +11,6 @@ export type QuestionOption = {
 export type QuestionBlock = {
   type: "question"
   questionKey: string
-  title?: string
   kicker?: string
   prompt: string
   options: readonly QuestionOption[]
@@ -118,8 +117,8 @@ function parseQuestionSegment(args: {
   if (!firstLine.startsWith("?")) {
     return hasCorrectMarker || titleActivatesQuestion
       ? invalidQuestion(
-          "Question slides must start with a prompt line beginning with `?`.",
-        )
+        "Question slides must start with a prompt line beginning with `?`.",
+      )
       : { kind: "not-question" }
   }
 
@@ -193,8 +192,8 @@ function parseQuestionSegment(args: {
   if (correctCount !== 1) {
     return hasCorrectMarker || titleActivatesQuestion
       ? invalidQuestion(
-          "Question slides must have exactly one `{correct}` answer.",
-        )
+        "Question slides must have exactly one `{correct}` answer.",
+      )
       : { kind: "not-question" }
   }
 
@@ -219,7 +218,6 @@ function parseQuestionSegment(args: {
     block: {
       type: "question",
       questionKey,
-      ...(title ? { title } : {}),
       ...(kicker ? { kicker } : {}),
       prompt,
       options,

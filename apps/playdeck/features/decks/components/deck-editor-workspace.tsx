@@ -149,10 +149,10 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
   const statusMessage = error
     ? null
     : pending
-      ? "Saving…"
+      ? "Syncing…"
       : isDirty
-        ? "Unsaved changes"
-        : "Saved"
+        ? "Draft unsaved"
+        : "Changes saved"
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
@@ -187,7 +187,7 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
             size="sm"
             onClick={() => setMarkdown((m) => appendQuestionSlideMarkdown(m))}
           >
-            Add question slide
+            New Question (MCQ)
           </Button>
           <Button
             type="button"
@@ -195,7 +195,7 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
             size="sm"
             onClick={() => setMarkdown((m) => appendPollSlideMarkdown(m))}
           >
-            Add poll slide
+            New Poll
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={addSlide}>
             Add slide

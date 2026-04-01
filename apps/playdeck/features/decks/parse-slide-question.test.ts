@@ -26,7 +26,6 @@ describe("parseQuestionSlideBody", () => {
 
     expect(result.kind).toBe("question")
     if (result.kind !== "question") return
-    expect(result.block.title).toBe("Question 3")
     expect(result.block.kicker).toBe("Warm-up")
     expect(result.block.options).toHaveLength(4)
     expect(result.block.correctOptionIndex).toBe(0)

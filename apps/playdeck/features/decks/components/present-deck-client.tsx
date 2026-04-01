@@ -82,7 +82,7 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
           method: "DELETE",
           ...(opts.keepalive ? { keepalive: true as const } : {}),
         },
-      ).catch(() => {})
+      ).catch(() => { })
     }
   }, [])
 

@@ -4,7 +4,7 @@ import { Google_Sans_Code, Google_Sans_Flex, Newsreader } from "next/font/google
 export const fontSans = Google_Sans_Flex({
   subsets: ["latin"],
   weight: "variable",
-  variable: "--font-sans",
+  variable: "--font-sans-flex",
   display: "swap",
   fallback: ["system-ui", "sans-serif"],
 })
@@ -13,7 +13,7 @@ export const fontSans = Google_Sans_Flex({
 export const fontMono = Google_Sans_Code({
   subsets: ["latin"],
   weight: "variable",
-  variable: "--font-mono",
+  variable: "--font-sans-code",
   display: "swap",
   fallback: ["ui-monospace", "monospace"],
 })
@@ -22,6 +22,6 @@ export const fontMono = Google_Sans_Code({
 export const fontDisplay = Newsreader({
   subsets: ["latin"],
   weight: "600",
-  variable: "--font-display",
+  variable: "--font-newsreader",
   display: "swap",
 })
