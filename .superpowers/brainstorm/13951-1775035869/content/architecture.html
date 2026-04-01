@@ -1,0 +1,76 @@
+<h2>Full image handling architecture</h2>
+<p class="subtitle">One approach — designed so every existing render site works without being rewritten.</p>
+
+<div class="mockup">
+  <div class="mockup-header">The complete flow</div>
+  <div class="mockup-body" style="font-size:0.85rem;line-height:2">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem">
+
+      <div>
+        <h3 style="margin-bottom:0.75rem">✏️ Authoring (editor)</h3>
+        <div style="font-family:monospace;background:#1a1a2e;padding:1rem;border-radius:6px;line-height:1.8;font-size:0.8rem">
+          <div style="color:#888">── Paste / Drop / /image ──</div>
+          <div style="color:#fff">blob → <span style="color:#63b3ed">createImage()</span></div>
+          <div style="color:#fff">       ↓ Jazz upload</div>
+          <div style="color:#4ade80">insert: ![▌](jazz:co_z123)</div>
+          <div style="color:#888;margin-top:0.5rem">placeholder during upload:</div>
+          <div style="color:#f59e0b">![uploading…]()</div>
+          <div style="color:#888">→ replaced when done</div>
+        </div>
+
+        <h3 style="margin-top:1.5rem;margin-bottom:0.75rem">🚫 Edge cases</h3>
+        <div style="font-family:monospace;background:#1a1a2e;padding:1rem;border-radius:6px;line-height:1.8;font-size:0.8rem">
+          <div style="color:#f87171">non-image file → ignore silently</div>
+          <div style="color:#f87171">file &gt; 5MB → resize to max 1024px</div>
+          <div style="color:#f87171">external URL typed → passes through untouched</div>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="margin-bottom:0.75rem">🖥️ Rendering (everywhere)</h3>
+        <div style="font-family:monospace;background:#1a1a2e;padding:1rem;border-radius:6px;line-height:1.8;font-size:0.8rem">
+          <div style="color:#888">── marked custom renderer ──</div>
+          <div style="color:#fff">jazz:co_z123</div>
+          <div style="color:#fff">  ↓ outputs</div>
+          <div style="color:#4ade80">&lt;img data-jazz-id="co_z123"&gt;</div>
+          <div style="color:#888;margin-top:0.5rem">DOMPurify ✅ (data-attr is safe)</div>
+          <div style="color:#888;margin-top:0.5rem">── useJazzImages hook ──</div>
+          <div style="color:#fff">scans DOM for data-jazz-id</div>
+          <div style="color:#fff">FileStream.toBlob() → objectURL</div>
+          <div style="color:#4ade80">img.src = "blob:http://..."</div>
+        </div>
+
+        <h3 style="margin-top:1.5rem;margin-bottom:0.75rem">📡 Presenter + Audience</h3>
+        <div style="font-family:monospace;background:#1a1a2e;padding:1rem;border-radius:6px;line-height:1.8;font-size:0.8rem">
+          <div style="color:#888">LiveSession.markdown (frozen)</div>
+          <div style="color:#fff">  contains jazz:co_z123</div>
+          <div style="color:#fff">  same renderer → same hook</div>
+          <div style="color:#4ade80">both see the image ✅</div>
+          <div style="color:#888;margin-top:0.5rem">Jazz peer cache → works offline ✅</div>
+          <div style="color:#f59e0b">load fail → broken img placeholder ✅</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="margin-top:1.5rem;padding:1rem;background:#0f2027;border-radius:6px;border-left:3px solid #63b3ed">
+      <strong style="color:#63b3ed">Key insight:</strong>
+      <span style="color:#ccc"> <code>slideMarkdownToSafeHtml</code> stays synchronous. The <code>useJazzImages</code> hook handles async resolution client-side. Zero changes to existing render call sites — just wrap the HTML container with the hook.</span>
+    </div>
+
+    <div style="margin-top:1rem;padding:1rem;background:#0f2027;border-radius:6px;border-left:3px solid #4ade80">
+      <strong style="color:#4ade80">Scope of change:</strong>
+      <div style="color:#ccc;margin-top:0.5rem">
+        <div>① <code>render-slide-markdown.ts</code> — add custom marked renderer for jazz: URLs</div>
+        <div>② <code>useJazzImages</code> hook — new hook, resolves data-jazz-id attrs to blob URLs</div>
+        <div>③ <code>DeckMarkdownEditor</code> — add paste + drop + /image handlers (CodeMirror extensions)</div>
+        <div>④ <code>RevealSlideBody</code> — wrap with useJazzImages</div>
+        <div>⑤ <code>QuestionSlideCard</code> + <code>PollSlideCard</code> prompt containers — wrap with useJazzImages</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:1rem">Does this architecture look right? Any questions before we write the spec?</p>

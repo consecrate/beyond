@@ -1,0 +1,38 @@
+<h2>Where should uploaded images be stored?</h2>
+<p class="subtitle">The editor uses CodeMirror. When you paste an image, it needs to be uploaded somewhere and a URL returned to insert into the markdown. Which storage approach fits best?</p>
+
+<div class="options">
+  <div class="option" data-choice="supabase" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Supabase Storage <span style="font-size:0.75rem;opacity:0.6;font-weight:400">(recommended)</span></h3>
+      <p>Add Supabase to playdeck (you already use it in the repo). Free tier includes 1GB storage. Simple REST API, public bucket for images, integrates with your existing Supabase project. Standard choice for Next.js apps.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Already in your stack (other apps use it)</li><li>Free tier generous</li><li>CDN-backed public URLs</li><li>Easy SDK</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Need to add supabase client to playdeck</li><li>Requires Supabase project setup</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="cloudflare-r2" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Cloudflare R2</h3>
+      <p>You're already using Cloudflare Workers MCP. R2 is S3-compatible object storage with zero egress fees. Great for images served globally. Requires a Cloudflare account + R2 bucket + API token.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Zero egress cost</li><li>Global edge CDN</li><li>S3-compatible API</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>New infrastructure to set up</li><li>Adds AWS S3 SDK dependency</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="vercel-blob" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Vercel Blob</h3>
+      <p>Since you're likely deploying on Vercel, Vercel Blob is a first-party option. Minimal setup — just add <code>@vercel/blob</code> and a token. Files get a public CDN URL automatically.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Easiest setup for Vercel deployments</li><li>First-party SDK, no config</li><li>CDN included</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Paid after 500MB</li><li>Vendor lock-in to Vercel</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

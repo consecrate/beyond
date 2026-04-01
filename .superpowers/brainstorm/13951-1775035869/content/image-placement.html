@@ -1,0 +1,35 @@
+<h2>Where should images live in PlayDeck slides?</h2>
+<p class="subtitle">Images can serve different purposes depending on the slide type. Which placement(s) make sense for your app?</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="show-bg" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Show slides — full background or inline image</h3>
+      <p>Static content slides (like lecture slides) can have a hero image or an image embedded in the markdown body — used to explain concepts visually.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="question-img" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Question / Poll slides — image as part of the question prompt</h3>
+      <p>"Look at this image — which answer is correct?" The image appears above the question text, giving students visual context to answer from.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="option-img" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Answer options — images as choices</h3>
+      <p>Each answer option is an image instead of (or alongside) text. Students pick the right picture. Great for visual identification questions.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="all" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>All of the above — images anywhere</h3>
+      <p>Maximum flexibility: authors can put images in show slides, question prompts, and answer options. Handle it uniformly as "markdown supports images".</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 1.5rem">You can select multiple. This helps narrow the scope of what we need to design.</p>

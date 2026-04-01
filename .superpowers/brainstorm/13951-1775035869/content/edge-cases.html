@@ -1,0 +1,104 @@
+<h2>Edge cases — which ones should we handle in v1?</h2>
+<p class="subtitle">Select everything that needs to be handled. We'll spec each one explicitly so nothing is left to "we'll figure it out later".</p>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1rem">
+
+  <div>
+    <h3 style="margin-bottom:0.75rem">📥 Input edge cases</h3>
+    <div class="options" data-multiselect style="gap:0.75rem">
+      <div class="option" data-choice="non-image-paste" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">1</div>
+        <div class="content">
+          <h3>Paste non-image (PDF, zip, text)</h3>
+          <p>Clipboard contains a file that isn't an image. Should silently ignore — don't break normal text paste.</p>
+        </div>
+      </div>
+      <div class="option" data-choice="large-image" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">2</div>
+        <div class="content">
+          <h3>Image too large (&gt;5MB / huge dimensions)</h3>
+          <p>Jazz createImage() has maxSize option. Auto-resize to 1024px longest side before upload. No user prompt needed.</p>
+        </div>
+      </div>
+      <div class="option" data-choice="multi-paste" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">3</div>
+        <div class="content">
+          <h3>Paste/drop multiple images at once</h3>
+          <p>e.g. select 3 files in Finder and drop all at once. Insert them sequentially on separate lines.</p>
+        </div>
+      </div>
+      <div class="option" data-choice="drop-non-image" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">4</div>
+        <div class="content">
+          <h3>Drop a non-image file onto the editor</h3>
+          <p>Should ignore the drop and not insert anything. Don't replace text at drop point.</p>
+        </div>
+      </div>
+      <div class="option" data-choice="upload-fail" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">5</div>
+        <div class="content">
+          <h3>Jazz upload fails mid-way</h3>
+          <p>createImage() throws. Remove the <code>![uploading…]()</code> placeholder and show a toast error.</p>
+        </div>
+      </div>
+      <div class="option" data-choice="image-during-live" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">6</div>
+        <div class="content">
+          <h3>Image added to deck while session is live</h3>
+          <p>LiveSession.markdown is frozen at session start — new images won't appear in live session. Expected behaviour, but should be documented/noted.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h3 style="margin-bottom:0.75rem">🖼️ Render edge cases</h3>
+    <div class="options" data-multiselect style="gap:0.75rem">
+      <div class="option" data-choice="jazz-load-fail" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">7</div>
+        <div class="content">
+          <h3>Jazz image fails to load</h3>
+          <p>FileStream.toBlob() returns undefined or throws. Show a grey broken-image placeholder with the alt text. Don't crash the slide.</p>
+        </div>
+      </div>
+      <div class="option" data-choice="slow-load" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">8</div>
+        <div class="content">
+          <h3>Slow image load (Jazz still syncing)</h3>
+          <p>Show blur placeholder (Jazz createImage generates one automatically) while full image loads. Progressive reveal.</p>
+        </div>
+      </div>
+      <div class="option" data-choice="external-url" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">9</div>
+        <div class="content">
+          <h3>External URL images still work</h3>
+          <p><code>![alt](https://...)</code> typed manually must still render. The custom marked renderer only intercepts <code>jazz:</code> — all other URLs pass through unchanged.</p>
+        </div>
+      </div>
+      <div class="option" data-choice="reveal-sizing" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">10</div>
+        <div class="content">
+          <h3>Image sizing inside Reveal.js slides</h3>
+          <p>Reveal is 960×700px. Images need <code>max-width: 100%; max-height: 60vh; object-fit: contain</code> to not overflow the slide or push content off screen.</p>
+        </div>
+      </div>
+      <div class="option" data-choice="blob-url-cleanup" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">11</div>
+        <div class="content">
+          <h3>Blob URL memory leak</h3>
+          <p><code>URL.createObjectURL()</code> leaks memory if not revoked. The useJazzImages hook must call <code>URL.revokeObjectURL()</code> on cleanup (useEffect return).</p>
+        </div>
+      </div>
+      <div class="option" data-choice="ssr" onclick="toggleSelect(this)">
+        <div class="letter" style="font-size:0.7rem;width:1.5rem;height:1.5rem">12</div>
+        <div class="content">
+          <h3>SSR / server-side rendering</h3>
+          <p>Next.js may server-render slides. FileStream, URL.createObjectURL, and DOM APIs are browser-only. The hook must guard with <code>typeof window !== 'undefined'</code> or use <code>"use client"</code>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:1.5rem">Select what's in scope for v1 — unselected ones become known limitations in the spec.</p>

@@ -1,0 +1,30 @@
+<h2>How should the paste → render flow work?</h2>
+<p class="subtitle">
+  Jazz has a first-party <code>createImage()</code> from <code>jazz-tools/media</code> that stores images as <strong>ImageDefinition</strong> CoValues with auto-resizing and blur placeholders — no external storage needed.<br><br>
+  The image gets a Jazz CoValue ID like <code>co_z123abc</code>. The question is: what goes into the markdown, and how does the preview resolve it back to a visible image?
+</p>
+
+<div class="options">
+  <div class="option" data-choice="jazz-id" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Store Jazz ID in markdown — resolve at render time <span style="font-size:0.75rem;opacity:0.6;font-weight:400">(recommended)</span></h3>
+      <p>Paste image → upload via <code>createImage()</code> → insert <code>![alt](jazz:co_z123abc)</code> into markdown. A custom <strong>marked renderer</strong> intercepts <code>jazz:</code> URLs and resolves them to object URLs via <code>FileStream.toBlob()</code>.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Fully in Jazz — syncs with deck ownership/permissions</li><li>Works offline (Jazz peer caches)</li><li>Clean markdown, easy to parse</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Custom resolver needed in the marked pipeline</li><li>Async resolution requires a React hook or effect</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="data-url" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Embed as data URL in markdown</h3>
+      <p>Paste image → resize to reasonable size → convert to base64 → insert <code>![alt](data:image/png;base64,...)</code> directly. No Jazz storage, no resolution step — it just works with the existing <code>marked</code> pipeline.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Zero infrastructure changes</li><li>Works immediately with existing render pipeline</li><li>No async resolution</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Bloats markdown string (Jazz syncs the whole thing)</li><li>Large images = large CoValue payload</li><li>Not reusable across slides</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

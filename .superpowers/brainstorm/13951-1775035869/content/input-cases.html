@@ -1,0 +1,35 @@
+<h2>All the ways an image can arrive in the editor</h2>
+<p class="subtitle">Before we finalize the design, let's make sure we cover every realistic authoring scenario — not just paste from clipboard.</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="paste-clipboard" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Paste from clipboard</h3>
+      <p>Screenshot, copied image from browser or Figma. The Obsidian-style flow — most common for teachers building slides quickly.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="drag-drop" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Drag & drop a file</h3>
+      <p>Drag an image file from Finder/Explorer onto the editor. Common when authoring with local assets. CodeMirror already has <code>dropCursor: true</code> enabled.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="external-url" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>External URL typed manually</h3>
+      <p>Author types <code>![alt](https://...)</code> with a public URL. This already works today via marked — but we need to make sure our custom renderer doesn't break it.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="file-picker" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>File picker button</h3>
+      <p>A small "Insert image" button in the toolbar that opens a native file dialog. Good fallback for users who don't know about paste/drag.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:1.5rem">Select all that should be in scope for v1. We can defer others.</p>

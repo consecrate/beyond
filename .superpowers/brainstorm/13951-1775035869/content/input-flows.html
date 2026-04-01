@@ -1,0 +1,79 @@
+<h2>3 ways to insert an image — all in scope for v1</h2>
+<p class="subtitle">Here's how each one feels in the editor. All three result in the same thing: <code>![alt](jazz:co_z...)</code> inserted at the right position.</p>
+
+<div style="display:flex;flex-direction:column;gap:1.5rem;margin-top:1rem">
+
+  <div class="mockup">
+    <div class="mockup-header">A — Paste from clipboard (Ctrl/Cmd+V)</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:1rem;align-items:flex-start">
+        <div style="flex:1">
+          <div class="mock-content" style="font-family:monospace;font-size:0.85rem;line-height:1.8;padding:1rem">
+            <div># How photosynthesis works</div>
+            <div style="color:#888">|  ← cursor here</div>
+            <div style="opacity:0.4">Paste image here...</div>
+          </div>
+        </div>
+        <div style="font-size:1.5rem;align-self:center">→</div>
+        <div style="flex:1">
+          <div class="mock-content" style="font-family:monospace;font-size:0.85rem;line-height:1.8;padding:1rem">
+            <div># How photosynthesis works</div>
+            <div style="color:#4a9">![image](jazz:co_z123abc)</div>
+            <div style="color:#888">|  ← cursor moves after</div>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:0.8rem;opacity:0.6;margin-top:0.5rem">Uploading... spinner shown in status bar. Inserted at cursor position.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">B — Drag & drop from Finder/Explorer (smart drop)</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:1rem;align-items:flex-start">
+        <div style="flex:1">
+          <div class="mock-content" style="font-family:monospace;font-size:0.85rem;line-height:1.8;padding:1rem">
+            <div># How photosynthesis works</div>
+            <div style="background:rgba(99,179,237,0.15);border-left:2px solid #63b3ed;padding-left:0.5rem;color:#63b3ed">← drop indicator line</div>
+            <div>The process involves...</div>
+          </div>
+        </div>
+        <div style="font-size:1.5rem;align-self:center">→</div>
+        <div style="flex:1">
+          <div class="mock-content" style="font-family:monospace;font-size:0.85rem;line-height:1.8;padding:1rem">
+            <div># How photosynthesis works</div>
+            <div style="color:#4a9">![image](jazz:co_z456def)</div>
+            <div>The process involves...</div>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:0.8rem;opacity:0.6;margin-top:0.5rem">CodeMirror's dropCursor already shows the line. We intercept the drop event, get the position, insert there.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">C — /image inline command (new ✨)</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:1rem;align-items:flex-start">
+        <div style="flex:1">
+          <div class="mock-content" style="font-family:monospace;font-size:0.85rem;line-height:1.8;padding:1rem">
+            <div># How photosynthesis works</div>
+            <div>Type <span style="background:#2d3748;padding:0.1rem 0.3rem;border-radius:3px;color:#63b3ed">/image</span> + Enter</div>
+          </div>
+        </div>
+        <div style="font-size:1.5rem;align-self:center">→</div>
+        <div style="flex:1">
+          <div class="mock-content" style="font-family:monospace;font-size:0.85rem;line-height:1.8;padding:1rem">
+            <div># How photosynthesis works</div>
+            <div style="color:#888">/image removed, file picker opens</div>
+            <div style="color:#4a9;margin-top:0.5rem">![image](jazz:co_z789ghi)</div>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:0.8rem;opacity:0.6;margin-top:0.5rem">On Enter/Space after <code>/image</code>: delete the text, open native file picker, insert at that line position.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:1rem">All three upload via <code>createImage(blob, { owner: me })</code> and insert <code>![alt](jazz:co_z...)</code> at the exact position. Does the flow look right?</p>
