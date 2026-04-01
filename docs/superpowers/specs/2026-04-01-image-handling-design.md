@@ -14,9 +14,11 @@ Add image support to PlayDeck slide authoring. Authors paste, drag, or type `/im
 
 ## Scope
 
-Images appear in **Show slides, question prompts, and poll prompts** — everywhere `slideMarkdownToSafeHtml` is called and `useJazzImages` will be applied. The hook covers all render sites, so prompt image rendering is included in v1.
+**v1 (this build):** Show slides + Poll prompt rendering. These are the highest-value surfaces.
 
-**Out of scope for v1:**
+**Deferred (v2):** Question prompt rendering — the hook will be wired but not applied to `QuestionSlideCard` yet. The infrastructure (renderer + hook) supports it trivially when ready.
+
+**Out of scope:**
 - Images in question/poll **answer options**
 - Image gallery or reuse across slides
 - Author ability to resize or reposition images after insertion
@@ -108,11 +110,11 @@ No toast library exists in the app. Upload errors are surfaced via the existing 
 
 ### Where `useJazzImages` is applied
 
-| Component | Container |
-|---|---|
-| `RevealSlideBody` | Wraps the `dangerouslySetInnerHTML` div |
-| `QuestionSlideCard` — prompt area (card + overlay variants) | Wraps all 3 prompt `dangerouslySetInnerHTML` divs |
-| `PollSlideCard` — prompt area (card + overlay variants) | Wraps all prompt `dangerouslySetInnerHTML` divs |
+| Component | Container | v1? |
+|---|---|---|
+| `RevealSlideBody` | Wraps the `dangerouslySetInnerHTML` div | ✅ |
+| `PollSlideCard` — prompt area | Wraps prompt `dangerouslySetInnerHTML` divs | ✅ |
+| `QuestionSlideCard` — prompt area | Wraps prompt containers | ⏳ v2 |
 
 ---
 
@@ -179,7 +181,7 @@ Given the 1-hour window, implement in this order to fail fast on the critical pa
 5. **Paste handler** — CodeMirror extension with unique token strategy — verify end-to-end: paste → preview shows image
 6. **Apply hook** to follower view (`live-reveal-follower.tsx`) — verify follower sees image
 7. **Drop handler** + **`/image` command**
-8. **Apply hook** to question + poll prompt containers — verify prompt images render in presenter + follower view
+8. **Apply hook** to poll prompt containers (`PollSlideCard`) — verify poll prompt images render in presenter + follower view
 9. **CSS** — sizing + `--failed` state
 10. **Regression check** — normal text paste, external URL images, existing slides unaffected
 
@@ -197,10 +199,9 @@ Given the 1-hour window, implement in this order to fail fast on the critical pa
 | External URL image | Renders normally, no regression |
 | Presenter view | Image visible in Reveal.js slide |
 | Follower view | Image visible for student (permissions correct) |
-| Question prompt — presenter | Image in prompt renders correctly in presenter view |
-| Question prompt — follower | Image in prompt renders correctly in follower/audience view |
-| Poll prompt — presenter | Image in prompt renders correctly in presenter view |
-| Poll prompt — follower | Image in prompt renders correctly in follower/audience view |
+| Poll prompt — presenter | Image in poll prompt renders correctly in presenter view |
+| Poll prompt — follower | Image in poll prompt renders correctly in follower/audience view |
+| Question prompt | ⏳ deferred to v2 |
 | Slow load | Blur placeholder shown first, replaced by full image |
 | Failed load | Grey broken-image box shown, slide stable |
 | Memory | No blob URL leaks after navigating away |
@@ -225,6 +226,5 @@ Given the 1-hour window, implement in this order to fail fast on the critical pa
 | `features/decks/components/deck-editor-workspace.tsx` | Pass `error` setter + `deckGroup` down to editor |
 | `features/slides/deck-reveal-presenter.tsx` | Apply `useJazzImages` to slide body container |
 | `features/slides/live-reveal-follower.tsx` | Apply `useJazzImages` to slide body container |
-| `features/slides/question-slide-card.tsx` | Apply `useJazzImages` to all 3 prompt containers |
 | `features/slides/poll-slide-card.tsx` | Apply `useJazzImages` to prompt containers |
 | `apps/playdeck/app/globals.css` | Add `.jazz-image` sizing and `--failed` fallback styles |
