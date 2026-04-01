@@ -71,6 +71,25 @@ export function endLiveSession(liveSession: Loaded<typeof LiveSession>): void {
   liveSession.$jazz.applyDiff({ status: "ended" })
 }
 
+export function awardPlayPoints(
+  liveSession: Loaded<typeof LiveSession>,
+  accountId: string,
+  points: number,
+) {
+  const players = liveSession.joined_players
+  if (!players) return
+  assertLoaded(players)
+  for (const p of players) {
+    if (!p) continue
+    assertLoaded(p)
+    if (p.account_id === accountId) {
+      const current = p.play_points ?? 0
+      p.$jazz.applyDiff({ play_points: current + points })
+      break
+    }
+  }
+}
+
 function ensureClosedPollKeysList(liveSession: Loaded<typeof LiveSession>): void {
   if (!liveSession.$jazz.has("closed_poll_keys")) {
     liveSession.$jazz.set(
@@ -211,12 +230,14 @@ export function upsertPollVote(
   assertLoaded(votes)
 
   const list = [...votes]
+  let didVote = false
   const toRemove: number[] = []
   for (let i = 0; i < list.length; i++) {
     const v = list[i]
     assertLoaded(v)
     if (v.user_id === me.$jazz.id && v.poll_key === pollKey) {
       toRemove.push(i)
+      didVote = true
     }
   }
   for (const idx of toRemove.sort((a, b) => b - a)) {
@@ -233,6 +254,10 @@ export function upsertPollVote(
       liveSession.$jazz.owner,
     ),
   )
+
+  if (!didVote) {
+    awardPlayPoints(liveSession, me.$jazz.id, 10)
+  }
 
   return { ok: true }
 }
@@ -349,6 +374,7 @@ export function stopQuestion(
   me: Account,
   liveSession: Loaded<typeof LiveSession>,
   questionKey: string,
+  correctOptionIndex?: number,
 ): { ok: true } | { ok: false; error: string } {
   assertLoaded(me)
   assertLoaded(liveSession)
@@ -367,6 +393,19 @@ export function stopQuestion(
   }
 
   existing.$jazz.applyDiff({ status: "revealed" })
+
+  if (correctOptionIndex != null) {
+    const submissions = questionSubmissionsList(liveSession)
+    if (submissions) {
+      for (const entry of submissions) {
+        assertLoaded(entry)
+        if (entry.question_key === questionKey && entry.option_index === correctOptionIndex) {
+          awardPlayPoints(liveSession, entry.user_id, 20)
+        }
+      }
+    }
+  }
+
   return { ok: true }
 }
 
@@ -416,6 +455,8 @@ export function submitQuestionAnswer(
       liveSession.$jazz.owner,
     ),
   )
+
+  awardPlayPoints(liveSession, me.$jazz.id, 10)
 
   return { ok: true }
 }

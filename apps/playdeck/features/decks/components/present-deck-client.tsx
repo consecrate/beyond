@@ -165,14 +165,14 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
   )
 
   const handleStopQuestion = useCallback(
-    (questionKey: string) => {
+    (questionKey: string, correctOptionIndex?: number) => {
       if (!me.$isLoaded) return
       const session = liveSessionSub.$isLoaded
         ? liveSessionSub
         : liveSessionRef.current
       if (!session) return
       assertLoaded(me)
-      const result = stopQuestion(me, session, questionKey)
+      const result = stopQuestion(me, session, questionKey, correctOptionIndex)
       if (!result.ok) {
         window.alert(result.error)
       }

@@ -239,6 +239,9 @@ export function PollSlideCard({
         {showAudienceSubmitted ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
             <p className="text-2xl font-bold text-foreground">Response received!</p>
+            <div className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
+              +10 PlayPoints
+            </div>
             <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
               Hang tight! Results will be revealed once everyone has finished.
             </p>

@@ -32,6 +32,7 @@ export const QuestionState = co.map({
 export const SessionPlayer = co.map({
   account_id: z.string(),
   name: z.string(),
+  play_points: z.number().optional(),
 })
 
 /** Public-read live deck snapshot + authoritative slide index for viewers. */

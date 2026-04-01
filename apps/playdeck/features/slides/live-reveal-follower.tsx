@@ -10,6 +10,7 @@ import Reveal from "reveal.js"
 import type { RevealApi } from "reveal.js"
 import { buttonVariants, cn } from "@beyond/design-system"
 import Link from "next/link"
+import { Star } from "lucide-react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
@@ -79,10 +80,13 @@ export function LiveRevealFollower({
   const hasJoinedRef = useRef(false)
 
   useEffect(() => {
-    if (!me.$isLoaded || !liveSession || !liveSession.joined_players) return
+    if (!me.$isLoaded || !liveSession) return
 
-    assertLoaded(liveSession.joined_players)
-    const playersArr = [...liveSession.joined_players]
+    const players = liveSession.joined_players
+    if (players == null || !players.$isLoaded) return
+
+    assertLoaded(players)
+    const playersArr = [...players]
     const isCurrentlyIn = playersArr.some((p) => {
       if (!p) return false
       assertLoaded(p)
@@ -96,10 +100,29 @@ export function LiveRevealFollower({
       hasJoinedRef.current = true
     } else {
       if (!isCurrentlyIn) {
-        setIsKicked(true)
+        queueMicrotask(() => {
+          setIsKicked(true)
+        })
       }
     }
   }, [me, liveSession])
+
+  let playPoints = 0
+  if (me.$isLoaded && liveSession && liveSession.joined_players) {
+    const players = liveSession.joined_players
+    if (players.$isLoaded) {
+      assertLoaded(players)
+      for (const p of players) {
+        if (p && p.$isLoaded) {
+          assertLoaded(p)
+          if (p.account_id === userId) {
+            playPoints = p.play_points ?? 0
+            break
+          }
+        }
+      }
+    }
+  }
 
   useEffect(() => {
     activeSlideIndexRef.current = activeSlideIndex
@@ -216,6 +239,12 @@ export function LiveRevealFollower({
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{deckTitle}</p>
+        </div>
+        <div className="flex shrink-0 items-center justify-end">
+          <div className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
+            <Star className="h-3.5 w-3.5 fill-amber-500/50" />
+            <span className="tabular-nums block pt-px">{playPoints} PlayPoints</span>
+          </div>
         </div>
       </header>
 

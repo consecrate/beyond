@@ -39,6 +39,7 @@ function JoinLiveSessionView({
 }) {
   const live = useCoState(LiveSession, sessionId, {
     resolve: {
+      joined_players: { $each: true },
       poll_votes: { $each: true },
       closed_poll_keys: true,
       question_submissions: { $each: true },

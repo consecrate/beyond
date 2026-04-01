@@ -219,6 +219,11 @@ function AudienceQuestionRevealFeedback({
     <div className={cn("flex min-h-0 flex-1 flex-col items-center justify-center px-6 py-8", toneClass)}>
       <div className="w-full max-w-2xl space-y-5 text-center">
         <p className="text-3xl font-bold sm:text-4xl">{title}</p>
+        {hasAnswered && isCorrect ? (
+          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+            +20 PlayPoints Bonus!
+          </p>
+        ) : null}
         <p className="text-base leading-relaxed opacity-90 sm:text-lg">{subtitle}</p>
         <div className="mx-auto w-full max-w-xl rounded-none border border-current/25 bg-background/80 px-5 py-4 text-left text-foreground dark:bg-background/50">
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -320,6 +325,9 @@ export function QuestionSlideCard({
         {showAudienceSubmitted ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
             <p className="text-2xl font-bold text-foreground">Response received!</p>
+            <div className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
+              +10 PlayPoints
+            </div>
             <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
               Hang tight! Results will be revealed once everyone has finished.
             </p>
