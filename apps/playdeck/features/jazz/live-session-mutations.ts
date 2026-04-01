@@ -14,6 +14,7 @@ import {
   QuestionState,
   SessionPlayer,
   QuestionSubmission,
+  Team,
 } from "@/features/jazz/schema"
 
 export type QuestionLiveStatus = "idle" | "open" | "revealed"
@@ -81,7 +82,7 @@ export function awardPlayPoints(
   assertLoaded(players)
   for (const p of players) {
     if (!p) continue
-    assertLoaded(p)
+    if (!p || !p.$isLoaded) continue
     if (p.account_id === accountId) {
       const current = p.play_points ?? 0
       p.$jazz.applyDiff({ play_points: current + points })
@@ -142,7 +143,7 @@ function findQuestionStateEntry(
   const states = questionStatesList(liveSession)
   if (!states) return null
   for (const entry of states) {
-    assertLoaded(entry)
+    if (!entry || !entry.$isLoaded) continue
     if (entry.question_key === questionKey) {
       return entry
     }
@@ -234,7 +235,7 @@ export function upsertPollVote(
   const toRemove: number[] = []
   for (let i = 0; i < list.length; i++) {
     const v = list[i]
-    assertLoaded(v)
+    if (!v || !v.$isLoaded) continue
     if (v.user_id === me.$jazz.id && v.poll_key === pollKey) {
       toRemove.push(i)
       didVote = true
@@ -273,7 +274,7 @@ export function aggregatePollCounts(
   const votes = liveSession.poll_votes
   assertLoaded(votes)
   for (const v of votes) {
-    assertLoaded(v)
+    if (!v || !v.$isLoaded) continue
     if (v.poll_key !== pollKey) continue
     const i = v.option_index
     if (i >= 0 && i < optionCount) counts[i]++
@@ -291,7 +292,7 @@ export function myPollVote(
   const votes = liveSession.poll_votes
   assertLoaded(votes)
   for (const v of votes) {
-    assertLoaded(v)
+    if (!v || !v.$isLoaded) continue
     if (v.user_id === userId && v.poll_key === pollKey) {
       return v.option_index
     }
@@ -316,7 +317,7 @@ export function hasAnotherOpenQuestion(
   const states = questionStatesList(liveSession)
   if (!states) return false
   for (const entry of states) {
-    assertLoaded(entry)
+    if (!entry || !entry.$isLoaded) continue
     if (entry.status !== "open") continue
     if (questionKey && entry.question_key === questionKey) continue
     return true
@@ -398,7 +399,7 @@ export function stopQuestion(
     const submissions = questionSubmissionsList(liveSession)
     if (submissions) {
       for (const entry of submissions) {
-        assertLoaded(entry)
+        if (!entry || !entry.$isLoaded) continue
         if (entry.question_key === questionKey && entry.option_index === correctOptionIndex) {
           awardPlayPoints(liveSession, entry.user_id, 20)
         }
@@ -439,7 +440,7 @@ export function submitQuestionAnswer(
   }
 
   for (const entry of submissions) {
-    assertLoaded(entry)
+    if (!entry || !entry.$isLoaded) continue
     if (entry.user_id === me.$jazz.id && entry.question_key === args.questionKey) {
       return { ok: false, error: "You have already answered this question." }
     }
@@ -471,7 +472,7 @@ export function myQuestionAnswer(
   if (submissions == null) return null
   assertLoaded(submissions)
   for (const entry of submissions) {
-    assertLoaded(entry)
+    if (!entry || !entry.$isLoaded) continue
     if (entry.user_id === userId && entry.question_key === questionKey) {
       return entry.option_index
     }
@@ -490,7 +491,7 @@ export function countQuestionAnswers(
 
   const users = new Set<string>()
   for (const entry of submissions) {
-    assertLoaded(entry)
+    if (!entry || !entry.$isLoaded) continue
     if (entry.question_key === questionKey) {
       users.add(entry.user_id)
     }
@@ -509,7 +510,7 @@ export function aggregateQuestionCounts(
   if (submissions == null) return counts
   assertLoaded(submissions)
   for (const entry of submissions) {
-    assertLoaded(entry)
+    if (!entry || !entry.$isLoaded) continue
     if (entry.question_key !== questionKey) continue
     const i = entry.option_index
     if (i >= 0 && i < optionCount) counts[i]++
@@ -532,7 +533,7 @@ export function joinLiveSession(
   assertLoaded(players)
 
   for (const p of players) {
-    assertLoaded(p)
+    if (!p || !p.$isLoaded) continue
     if (p.account_id === me.$jazz.id) {
       return // Already joined
     }
@@ -566,7 +567,7 @@ export function kickPlayer(
     const toRemove: number[] = []
     for (let i = 0; i < list.length; i++) {
       const p = list[i]
-      assertLoaded(p)
+      if (!p || !p.$isLoaded) continue
       if (p.account_id === accountId) {
         toRemove.push(i)
       }
@@ -587,3 +588,157 @@ export function setLobbyVisible(
   if (me.$jazz.id !== liveSession.presenter_account_id) return
   liveSession.$jazz.applyDiff({ is_lobby_visible: visible })
 }
+
+const TEAM_COLORS = [
+  "text-red-500 bg-red-500/10 border-red-500/20",
+  "text-blue-500 bg-blue-500/10 border-blue-500/20",
+  "text-green-500 bg-green-500/10 border-green-500/20",
+  "text-amber-500 bg-amber-500/10 border-amber-500/20",
+  "text-purple-500 bg-purple-500/10 border-purple-500/20",
+  "text-pink-500 bg-pink-500/10 border-pink-500/20",
+]
+
+const TEAM_NAMES = [
+  "Red Team",
+  "Blue Team",
+  "Green Team",
+  "Yellow Team",
+  "Purple Team",
+  "Pink Team",
+]
+
+export function startTeamFormation(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  numTeams: number,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) return
+
+  const teams = co.list(Team).create([], liveSession.$jazz.owner)
+  const count = Math.min(Math.max(2, numTeams), TEAM_NAMES.length)
+  for (let i = 0; i < count; i++) {
+    teams.$jazz.push(
+      Team.create({
+        id: `team_${i + 1}`,
+        name: TEAM_NAMES[i],
+        color: TEAM_COLORS[i],
+        hp: 10,
+      }, liveSession.$jazz.owner)
+    )
+  }
+
+  liveSession.$jazz.applyDiff({
+    teams,
+    team_formation_state: "setup",
+  })
+}
+
+export function assignTeamLeader(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  teamId: string,
+  accountId: string | undefined,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) return
+
+  if (!liveSession.$jazz.has("teams") || !liveSession.teams) return
+  assertLoaded(liveSession.teams)
+
+  for (const t of liveSession.teams) {
+    if (!t) continue
+    if (!t || !t.$isLoaded) continue
+    if (t.id === teamId) {
+      if (accountId) {
+         t.$jazz.applyDiff({ leader_account_id: accountId })
+      } else {
+         t.$jazz.applyDiff({ leader_account_id: undefined })
+      }
+      
+      if (accountId) {
+         const players = liveSession.joined_players
+         if (players) {
+            assertLoaded(players)
+            for (const p of players) {
+               if(!p) continue
+               if (!p || !p.$isLoaded) continue
+               if (p.account_id === accountId) {
+                 p.$jazz.applyDiff({ team_id: teamId })
+               }
+            }
+         }
+      }
+      break
+    }
+  }
+}
+
+export function openTeamJoining(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) return
+
+  liveSession.$jazz.applyDiff({ team_formation_state: "open" })
+}
+
+export function joinTeam(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  teamId: string,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  
+  const players = liveSession.joined_players
+  if (!players) return { ok: false, error: "Not in session" }
+  assertLoaded(players)
+  
+  if (!liveSession.$jazz.has("teams") || !liveSession.teams) {
+    return { ok: false, error: "Teams not set up" }
+  }
+  
+  assertLoaded(liveSession.teams)
+  const numTeams = [...liveSession.teams].filter(Boolean).length
+  if (numTeams === 0) return { ok: false, error: "No teams available" }
+
+  let activePlayers = 0
+  for (const p of players) {
+    if (p) activePlayers++
+  }
+
+  const limit = Math.ceil(activePlayers / numTeams)
+  
+  let currentTeamCount = 0
+  let myPlayerRecord: Loaded<typeof SessionPlayer> | null = null
+
+  for (const p of players) {
+    if (!p) continue
+    if (!p || !p.$isLoaded) continue
+    if (p.account_id === me.$jazz.id) {
+      myPlayerRecord = p
+    }
+    if (p.team_id === teamId) {
+      currentTeamCount++
+    }
+  }
+
+  if (!myPlayerRecord) return { ok: false, error: "You must join the session before joining a team." }
+
+  if (myPlayerRecord.team_id === teamId) {
+    return { ok: true } 
+  }
+
+  if (currentTeamCount >= limit) {
+    return { ok: false, error: "This team is currently full! Try another." }
+  }
+
+  myPlayerRecord.$jazz.applyDiff({ team_id: teamId })
+  return { ok: true }
+}
+

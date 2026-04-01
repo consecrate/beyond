@@ -291,11 +291,7 @@ export function QuestionSlideCard({
   const showResults = resultsVisible ?? state === "revealed"
   const showPresenterQuestion =
     variant === "presenter" && (state === "idle" || state === "open")
-  const showPresenterClosedAwaitingSessionEnd =
-    variant === "presenter" && state === "revealed" && !showResults
   const showPresenterOpen = variant === "presenter" && state === "open"
-  const showAudienceAwaitingSessionEnd =
-    variant === "audience" && state === "revealed" && !showResults
   const hideOptionRowsUntilReveal =
     overlay && variant === "presenter" && !showResults
   const totalAnswers = counts.reduce((sum, count) => sum + count, 0)
@@ -396,15 +392,6 @@ export function QuestionSlideCard({
           />
         ) : null}
 
-        {showAudienceAwaitingSessionEnd ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-            <p className="text-2xl font-bold text-foreground">Question closed</p>
-            <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
-              Results stay hidden until the live session ends.
-            </p>
-          </div>
-        ) : null}
-
         {submitError ? (
           <p className="shrink-0 px-3 pb-2 text-center text-sm text-destructive sm:px-4">
             {submitError}
@@ -476,7 +463,7 @@ export function QuestionSlideCard({
         ) : null}
       </div>
 
-      {showPreview || showResults || showPresenterQuestion || showPresenterClosedAwaitingSessionEnd ? (
+      {showPreview || showResults || showPresenterQuestion ? (
         <div className="space-y-3">
           <div
             className={cn(
@@ -577,17 +564,6 @@ export function QuestionSlideCard({
           )}
         >
           Responses are coming in live. End the question to reveal results and the correct answer.
-        </p>
-      ) : null}
-
-      {showPresenterClosedAwaitingSessionEnd ? (
-        <p
-          className={cn(
-            "text-muted-foreground",
-            overlay ? "text-center text-xs" : "mb-2 text-xs",
-          )}
-        >
-          Question is closed. Results stay hidden until the live session ends.
         </p>
       ) : null}
 

@@ -29,10 +29,19 @@ export const QuestionState = co.map({
   status: z.union([z.literal("idle"), z.literal("open"), z.literal("revealed")]),
 })
 
+export const Team = co.map({
+  id: z.string(),
+  name: z.string(),
+  color: z.string(),
+  leader_account_id: z.string().optional(),
+  hp: z.number().optional(),
+})
+
 export const SessionPlayer = co.map({
   account_id: z.string(),
   name: z.string(),
   play_points: z.number().optional(),
+  team_id: z.string().optional(),
 })
 
 /** Public-read live deck snapshot + authoritative slide index for viewers. */
@@ -49,6 +58,8 @@ export const LiveSession = co.map({
   closed_poll_keys: co.list(z.string()).optional(),
   question_submissions: co.list(QuestionSubmission).optional(),
   question_states: co.list(QuestionState).optional(),
+  teams: co.list(Team).optional(),
+  team_formation_state: z.union([z.literal("idle"), z.literal("setup"), z.literal("open")]).optional(),
 })
 
 export const PlaydeckRoot = co.map({

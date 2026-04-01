@@ -10,7 +10,7 @@ import Reveal from "reveal.js"
 import type { RevealApi } from "reveal.js"
 import { buttonVariants, cn } from "@beyond/design-system"
 import Link from "next/link"
-import { Star } from "lucide-react"
+import { Star, CheckCircle2, Users } from "lucide-react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
@@ -24,8 +24,9 @@ import {
   submitQuestionAnswer,
   upsertPollVote,
   joinLiveSession,
+  joinTeam,
 } from "@/features/jazz/live-session-mutations"
-import { PlaydeckAccount, type LiveSession } from "@/features/jazz/schema"
+import { PlaydeckAccount, type LiveSession, type SessionPlayer, type Team } from "@/features/jazz/schema"
 import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
@@ -108,6 +109,7 @@ export function LiveRevealFollower({
   }, [me, liveSession])
 
   let playPoints = 0
+  let myPlayerRecord: Loaded<typeof SessionPlayer> | null = null
   if (me.$isLoaded && liveSession && liveSession.joined_players) {
     const players = liveSession.joined_players
     if (players.$isLoaded) {
@@ -117,12 +119,36 @@ export function LiveRevealFollower({
           assertLoaded(p)
           if (p.account_id === userId) {
             playPoints = p.play_points ?? 0
+            myPlayerRecord = p
             break
           }
         }
       }
     }
   }
+
+  const formationState = liveSession?.team_formation_state ?? "idle"
+  const teams = liveSession?.teams && liveSession.teams.$isLoaded 
+    ? Array.from(liveSession.teams).filter(Boolean) as Loaded<typeof Team>[]
+    : []
+
+  const [teamError, setTeamError] = useState<string | null>(null)
+  const [teamPending, startTeamJoin] = useTransition()
+
+  const handleJoinTeam = (teamId: string) => {
+    setTeamError(null)
+    startTeamJoin(() => {
+       if (!me.$isLoaded) {
+         setTeamError("Connecting...")
+         return
+       }
+       assertLoaded(me)
+       const res = joinTeam(me, liveSession, teamId)
+       if (!res.ok) setTeamError(res.error)
+    })
+  }
+
+
 
   useEffect(() => {
     activeSlideIndexRef.current = activeSlideIndex
@@ -241,6 +267,14 @@ export function LiveRevealFollower({
           <p className="truncate text-sm font-medium">{deckTitle}</p>
         </div>
         <div className="flex shrink-0 items-center justify-end">
+          {myPlayerRecord?.team_id && formationState !== "idle" ? (
+             <div className="mr-3 flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                <Users className="h-3.5 w-3.5" />
+                <span className="tabular-nums block pt-px">
+                   Team: {teams.find(t => t?.id === myPlayerRecord?.team_id)?.name ?? "Unknown"}
+                </span>
+             </div>
+          ) : null}
           <div className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
             <Star className="h-3.5 w-3.5 fill-amber-500/50" />
             <span className="tabular-nums block pt-px">{playPoints} PlayPoints</span>
@@ -280,6 +314,55 @@ export function LiveRevealFollower({
                 </div>
               </div>
             </div>
+
+            {formationState === "open" ? (
+               <div className="absolute inset-0 z-20 flex flex-col bg-background/95 backdrop-blur-sm p-6 overflow-auto" role="presentation">
+                  <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
+                     {myPlayerRecord?.team_id ? (
+                        <div className="text-center flex flex-col items-center animate-in fade-in zoom-in duration-500">
+                           <div className="h-20 w-20 rounded-full bg-primary/20 flex items-center justify-center mb-6">
+                              <CheckCircle2 className="h-10 w-10 text-primary" />
+                           </div>
+                           <h2 className="text-3xl font-black tracking-tight mb-2">You&apos;re in!</h2>
+                           <p className="text-muted-foreground">Waiting for the presenter to start the game.</p>
+                        </div>
+                     ) : (
+                        <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                           <div className="text-center">
+                              <h2 className="text-3xl font-black tracking-tight">Choose Your Team</h2>
+                              <p className="opacity-70 mt-1">Join a team to compete in the Battle Royale.</p>
+                              {teamError && <p className="text-destructive text-sm font-medium mt-3 bg-destructive/10 p-2 rounded-md">{teamError}</p>}
+                           </div>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {teams.map(t => {
+                                 const leader = liveSession.joined_players && liveSession.joined_players.$isLoaded
+                                    ? Array.from(liveSession.joined_players).find(p => p && p.$isLoaded && p.account_id === t.leader_account_id) as Loaded<typeof SessionPlayer> | undefined
+                                    : null
+                                 return (
+                                    <button
+                                       key={t.id}
+                                       onClick={() => handleJoinTeam(t.id)}
+                                       disabled={teamPending}
+                                       className={cn(
+                                          "relative flex flex-col items-start gap-1 rounded-xl border-2 p-5 text-left transition-all hover:-translate-y-1 hover:shadow-lg active:scale-95 disabled:pointer-events-none disabled:opacity-50",
+                                          t.color,
+                                          "bg-background/80 hover:bg-background"
+                                       )}
+                                    >
+                                       <h3 className="text-xl font-bold">{t.name}</h3>
+                                       <div className="mt-2 flex items-center gap-1.5 text-sm font-medium opacity-80">
+                                          <Star className="h-3.5 w-3.5 fill-current" />
+                                          {leader ? leader.name : "No Leader"}
+                                       </div>
+                                    </button>
+                                 )
+                              })}
+                           </div>
+                        </div>
+                     )}
+                  </div>
+               </div>
+            ) : null}
 
             {slides[revealIndex]?.interactiveError ? (
               <div
@@ -359,8 +442,7 @@ export function LiveRevealFollower({
                   {(() => {
                     const question = slides[revealIndex].question!
                     const state = questionStatus(liveSession, question.questionKey)
-                    const resultsVisible =
-                      state === "revealed" && liveSession.status === "ended"
+                    const resultsVisible = state === "revealed"
                     const counts = resultsVisible
                       ? aggregateQuestionCounts(
                         liveSession,

@@ -13,7 +13,7 @@ import {
   isPollClosed,
   questionStatus,
 } from "@/features/jazz/live-session-mutations"
-import type { LiveSession } from "@/features/jazz/schema"
+import type { LiveSession, SessionPlayer } from "@/features/jazz/schema"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
@@ -25,6 +25,7 @@ import {
   Loader2,
   Minimize2,
   Radio,
+  Star,
   Users,
   X,
 } from "lucide-react"
@@ -48,6 +49,9 @@ export type DeckLiveControls = {
   onClosePoll?: (pollKey: string) => void | Promise<void>
   onStartQuestion?: (questionKey: string) => void | Promise<void>
   onStopQuestion?: (questionKey: string, correctOptionIndex?: number) => void | Promise<void>
+  onStartTeamFormation?: (numTeams: number) => void | Promise<void>
+  onAssignTeamLeader?: (teamId: string, accountId: string | undefined) => void | Promise<void>
+  onOpenTeamJoining?: () => void | Promise<void>
 }
 
 export type DeckRevealPresenterProps = {
@@ -607,8 +611,7 @@ export function DeckRevealPresenter({
                           live.liveSession,
                           question.questionKey,
                         )
-                        const resultsVisible =
-                          state === "revealed" && live.liveSession.status === "ended"
+                        const resultsVisible = state === "revealed"
                         const counts = resultsVisible
                           ? aggregateQuestionCounts(
                             live.liveSession,
@@ -676,42 +679,150 @@ export function DeckRevealPresenter({
                     const players = live.liveSession.joined_players && live.liveSession.joined_players.$isLoaded
                       ? Array.from(live.liveSession.joined_players)
                       : []
-                    return (
-                      <div className="w-full max-w-4xl">
-                        <div className="mb-6 flex items-center justify-between">
-                          <h2 className="text-xl font-semibold opacity-90">Players Joined</h2>
-                          <span className="rounded-full bg-primary/20 px-3 py-1 font-mono text-sm font-bold text-primary">
-                            {players.length}
-                          </span>
-                        </div>
 
-                        {players.length === 0 ? (
-                          <div className="flex h-32 items-center justify-center rounded-xl border-2 border-dashed border-muted bg-muted/10">
-                            <p className="animate-pulse text-muted-foreground">Waiting for players to join...</p>
+                    const formationState = live.liveSession?.team_formation_state ?? "idle"
+                    
+                    if (formationState === "idle") {
+                      return (
+                        <div className="w-full max-w-4xl">
+                          <div className="mb-6 flex items-center justify-between">
+                            <h2 className="text-xl font-semibold opacity-90">Players Joined</h2>
+                            <span className="rounded-full bg-primary/20 px-3 py-1 font-mono text-sm font-bold text-primary">
+                              {players.length}
+                            </span>
                           </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-3">
-                            {players.map((p, i: number) => {
-                              if (!p || !p.$isLoaded) return null
-                              return (
-                                <div
-                                  key={i}
-                                  className="group relative flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium transition-all hover:pr-10"
-                                >
-                                  <span>{p.name}</span>
-                                  <button
-                                    onClick={() => void live.onKickPlayer?.(p.account_id)}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-muted p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive hover:text-white group-hover:opacity-100"
-                                    title="Kick Player"
+  
+                          {players.length === 0 ? (
+                            <div className="flex h-32 items-center justify-center rounded-xl border-2 border-dashed border-muted bg-muted/10">
+                              <p className="animate-pulse text-muted-foreground">Waiting for players to join...</p>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-3">
+                              {players.map((p, i: number) => {
+                                if (!p || !p.$isLoaded) return null
+                                return (
+                                  <div
+                                    key={i}
+                                    className="group relative flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium transition-all hover:pr-10"
                                   >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
+                                    <span>{p.name}</span>
+                                    <button
+                                      onClick={() => void live.onKickPlayer?.(p.account_id)}
+                                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-muted p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive hover:text-white group-hover:opacity-100"
+                                      title="Kick Player"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+
+                          {players.length > 0 && (
+                             <div className="mt-12 flex justify-center">
+                               <Button size="lg" onClick={() => void live.onStartTeamFormation?.(2)}>
+                                 Divide into Teams
+                               </Button>
+                             </div>
+                          )}
+                        </div>
+                      )
+                    }
+
+                    const teams = live.liveSession.teams && live.liveSession.teams.$isLoaded 
+                       ? Array.from(live.liveSession.teams).filter(Boolean)
+                       : []
+                    
+                    return (
+                        <div className="w-full max-w-5xl">
+                           <div className="mb-8 flex items-center justify-between">
+                             <div className="flex items-center gap-4">
+                               <h2 className="text-2xl font-bold">Team Builder</h2>
+                               {formationState === "setup" && (
+                                  <div className="flex gap-2">
+                                     {[2, 4, 6].map(num => (
+                                        <Button 
+                                           key={num} 
+                                           variant={teams.length === num ? "default" : "outline"}
+                                           size="sm"
+                                           onClick={() => void live.onStartTeamFormation?.(num)}
+                                         >
+                                           {num} Teams
+                                         </Button>
+                                     ))}
+                                  </div>
+                               )}
+                             </div>
+                             {formationState === "setup" && (
+                                <Button size="lg" onClick={() => void live.onOpenTeamJoining?.()}>
+                                  Lock & Open for Joining
+                                </Button>
+                             )}
+                             {formationState === "open" && (
+                                <span className="animate-pulse font-medium text-amber-500 bg-amber-500/10 px-4 py-2 rounded-full border border-amber-500/20">
+                                   Audience is joining teams...
+                                </span>
+                             )}
+                           </div>
+                           
+                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                              {teams.map(t => {
+                                 if (!t || !t.$isLoaded) return null
+                                 const teamPlayers = players.filter(p => p && p.$isLoaded && p.team_id === t.id)
+                                 const leader = teamPlayers.find(p => p && p.$isLoaded && p.account_id === t.leader_account_id) as Loaded<typeof SessionPlayer> | undefined
+                                 return (
+                                     <div key={t.id} className={cn("rounded-xl border-2 p-5 flex flex-col gap-4 shadow-sm", t.color)}>
+                                        <div className="flex items-center justify-between">
+                                           <h3 className="text-xl font-bold">{t.name}</h3>
+                                           <span className="font-mono font-bold bg-background/50 px-2.5 py-1 rounded-full text-sm">
+                                             {teamPlayers.length} members
+                                           </span>
+                                        </div>
+                                        
+                                        {formationState === "setup" ? (
+                                           <div className="bg-background/80 p-3 rounded-lg border border-border/50">
+                                              <p className="text-xs font-semibold mb-2 opacity-70 uppercase tracking-wider text-[var(--tw-prose-body)]">Assign Leader</p>
+                                              <select 
+                                                 className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                                                 value={t.leader_account_id || ""}
+                                                 onChange={(e) => void live.onAssignTeamLeader?.(t.id, e.target.value || undefined)}
+                                              >
+                                                <option value="">-- Choose a leader --</option>
+                                                {players.map(p => {
+                                                   if (!p || !p.$isLoaded) return null
+                                                   return (
+                                                      <option key={p.account_id} value={p.account_id}>{p.name}</option>
+                                                   )
+                                                })}
+                                              </select>
+                                           </div>
+                                        ) : (
+                                           <div className="bg-background/80 p-3 rounded-lg border border-border/50">
+                                              <p className="text-xs font-semibold mb-2 opacity-70 uppercase tracking-wider text-[var(--tw-prose-body)]">Leader</p>
+                                              <div className="font-medium text-sm flex items-center gap-2">
+                                                <Star className="h-4 w-4 fill-amber-500 text-amber-500" /> 
+                                                <span className="text-foreground">{leader ? leader.name : "None assigned"}</span>
+                                              </div>
+                                           </div>
+                                        )}
+                                        
+                                        <div className="flex-1 mt-2">
+                                           <p className="text-xs font-semibold mb-2 opacity-70 uppercase tracking-wider text-[var(--tw-prose-body)]">Roster</p>
+                                           <div className="flex flex-wrap gap-2">
+                                              {teamPlayers.filter(p => !leader || (p && p.$isLoaded && p.account_id !== leader.account_id)).map(p => {
+                                                 if (!p || !p.$isLoaded) return null
+                                                 return <span key={p.account_id} className="text-sm bg-background/80 text-foreground px-2 py-1 rounded-md border border-border/40">{p.name}</span>
+                                              })}
+                                              {teamPlayers.length === 0 && <span className="text-sm italic opacity-50 text-[var(--tw-prose-body)]">Empty</span>}
+                                              {teamPlayers.length === 1 && leader && <span className="text-sm italic opacity-50 text-[var(--tw-prose-body)]">No regular members yet</span>}
+                                           </div>
+                                        </div>
+                                     </div>
+                                 )
+                              })}
+                           </div>
+                        </div>
                     )
                   })()}
 

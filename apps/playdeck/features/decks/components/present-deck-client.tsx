@@ -20,6 +20,9 @@ import {
   updateLiveSlideIndex,
   setLobbyVisible,
   kickPlayer,
+  startTeamFormation,
+  assignTeamLeader,
+  openTeamJoining,
 } from "@/features/jazz/live-session-mutations"
 import { LiveSession, PlaydeckAccount } from "@/features/jazz/schema"
 import { PresentRevealLoader } from "@/features/slides/present-reveal-loader"
@@ -62,6 +65,7 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
       closed_poll_keys: true,
       question_submissions: { $each: true },
       question_states: { $each: true },
+      teams: { $each: true },
     },
   })
 
@@ -206,6 +210,39 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     [me, liveSessionSub],
   )
 
+  const handleStartTeamFormation = useCallback(
+    (numTeams: number) => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      startTeamFormation(me, session, numTeams)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleAssignTeamLeader = useCallback(
+    (teamId: string, accountId: string | undefined) => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      assignTeamLeader(me, session, teamId, accountId)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleOpenTeamJoining = useCallback(
+    () => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      openTeamJoining(me, session)
+    },
+    [me, liveSessionSub],
+  )
+
   const handleEndLive = useCallback(() => {
     tearDownLiveSession({ keepalive: false })
     setJoinCode(null)
@@ -277,6 +314,9 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
         onStopQuestion: handleStopQuestion,
         onSetLobbyVisible: handleSetLobbyVisible,
         onKickPlayer: handleKickPlayer,
+        onStartTeamFormation: handleStartTeamFormation,
+        onAssignTeamLeader: handleAssignTeamLeader,
+        onOpenTeamJoining: handleOpenTeamJoining,
       }}
     />
   )
