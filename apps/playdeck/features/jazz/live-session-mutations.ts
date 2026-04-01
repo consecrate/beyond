@@ -514,12 +514,21 @@ export function stopQuestion(
             healing_target_team_id?: string
           }
           const confirmedRows: ConfirmedFx[] = []
+          // Dedup guard: non-stackable powerup types can only fire once per team per round,
+          // even if a CRDT race produced duplicate entries in the selections list.
+          const seenNonStackable = new Set<string>()
           const selList = battleState.powerup_selections
           if (selList && selList.$isLoaded) {
             assertLoaded(selList)
             for (const s of selList) {
               if (!s || !s.$isLoaded) continue
               if (s.status !== "confirmed") continue
+              const isStackable = s.powerup_type === "healing_potion" || s.powerup_type === "step_up"
+              if (!isStackable) {
+                const dedupeKey = `${s.team_id}:${s.powerup_type}`
+                if (seenNonStackable.has(dedupeKey)) continue
+                seenNonStackable.add(dedupeKey)
+              }
               confirmedRows.push({
                 team_id: s.team_id,
                 powerup_type: s.powerup_type,

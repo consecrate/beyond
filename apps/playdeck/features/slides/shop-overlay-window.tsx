@@ -98,7 +98,7 @@ export function PowerupStoreCatalog({
 
       <div
         className={cn(
-          "grid w-full gap-4",
+          "grid w-full items-stretch gap-4",
           isEmbed ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 md:grid-cols-4",
         )}
       >
@@ -112,24 +112,32 @@ export function PowerupStoreCatalog({
               disabled={disabled}
               onClick={() => onBuy(pu.type, pu.cost)}
               className={cn(
-                "relative flex flex-col items-start gap-3 rounded-2xl border-2 p-5 text-left transition-all duration-300",
+                "relative flex h-full min-h-[10rem] flex-col items-start gap-2 rounded-2xl border-2 p-5 text-left transition-all duration-300",
                 canPurchase && canAfford
                   ? "border-border bg-card hover:-translate-y-1 hover:border-primary/50 hover:bg-muted/50 hover:shadow-lg active:scale-95"
                   : "cursor-not-allowed border-border/50 bg-muted/20 opacity-60",
               )}
             >
-              <div className="flex w-full items-center justify-between">
-                <h3 className="text-base font-bold leading-tight">{pu.name}</h3>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-1 text-xs font-bold",
-                    canAfford ? "bg-amber-500/20 text-amber-500" : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {pu.cost} PP
-                </span>
-              </div>
-              <p className="text-xs leading-snug text-muted-foreground">{pu.desc}</p>
+              {/* Icon */}
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted/60">
+                <pu.Icon className="h-5 w-5" aria-hidden />
+              </span>
+
+              {/* Name */}
+              <h3 className="text-base font-bold leading-tight">{pu.name}</h3>
+
+              {/* Description — grows to fill space so badge always sits at bottom */}
+              <p className="flex-1 text-xs leading-snug text-muted-foreground">{pu.desc}</p>
+
+              {/* Cost badge — always on its own row, never wraps */}
+              <span
+                className={cn(
+                  "whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold",
+                  canAfford ? "bg-amber-500/20 text-amber-500" : "bg-muted text-muted-foreground",
+                )}
+              >
+                {pu.cost} PP
+              </span>
             </button>
           )
         })}
@@ -190,13 +198,14 @@ export function ShopOverlayWindow({
   buyPending,
   onBuy,
 }: ShopOverlayWindowProps) {
-  const inStorePhase = gamePhase === "store"
-  const canPurchase = hasTeam && inStorePhase
+  const canPurchasePhase =
+    gamePhase === "store" || gamePhase === "playing" || gamePhase === "battle_royale"
+  const canPurchase = hasTeam && canPurchasePhase
   let readOnlyNotice: string | null = null
   if (!hasTeam) {
     readOnlyNotice = "Join a team to use the shop."
-  } else if (!inStorePhase) {
-    readOnlyNotice = "Purchases are only available during the store phase."
+  } else if (!canPurchasePhase) {
+    readOnlyNotice = "Purchases are not available right now."
   }
 
   return (
@@ -208,7 +217,7 @@ export function ShopOverlayWindow({
         <DialogHeader>
           <DialogTitle>Shop</DialogTitle>
           <DialogDescription>
-            Buy with your own PlayPoints during the store phase. Items go to your inventory.
+            Buy with your own PlayPoints. Items go to your inventory.
           </DialogDescription>
         </DialogHeader>
         {hasTeam && myTeam ? (
