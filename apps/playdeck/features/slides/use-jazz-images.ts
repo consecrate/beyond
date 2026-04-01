@@ -1,16 +1,13 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { loadImageBySize } from "jazz-tools/media"
+import { loadImage } from "jazz-tools/media"
 import type { Loaded } from "jazz-tools"
 import type { PlaydeckAccount } from "@/features/jazz/schema"
 
-const REVEAL_WIDTH = 960
-const REVEAL_HEIGHT = 700
-
 /**
  * Resolves all `<img data-jazz-id="co_z...">` elements inside `containerRef`
- * to blob URLs using Jazz progressive image loading.
+ * to blob URLs using Jazz image loading.
  *
  * Must be called in a "use client" component.
  * Safe to call on SSR — guards `typeof window === 'undefined'`.
@@ -19,8 +16,8 @@ export function useJazzImages(
   containerRef: React.RefObject<HTMLElement | null>,
   me: Loaded<typeof PlaydeckAccount> | null | undefined,
   /**
-   * Pass a content-derived key (e.g. the HTML string being rendered) so the
-   * hook re-runs when the rendered HTML changes and new jazz images appear.
+   * Pass a content-derived key (e.g. the HTML string or markdown) so the
+   * hook re-runs when new jazz images appear in the rendered content.
    * Defaults to "" — always present so the dep array never changes size.
    */
   contentKey: string = "",
@@ -49,9 +46,9 @@ export function useJazzImages(
         if (!id) continue
 
         try {
-          // loadImageBySize accepts a CoValue ID string directly —
-          // no need to call ImageDefinition.load() first.
-          const result = await loadImageBySize(id, REVEAL_WIDTH, REVEAL_HEIGHT)
+          // loadImage loads the ImageDefinition with resolve: { original: true }
+          // then returns the original FileStream — works reliably for all images
+          const result = await loadImage(id)
 
           if (cancelled) break
 
