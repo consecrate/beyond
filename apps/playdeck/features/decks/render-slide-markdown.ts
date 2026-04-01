@@ -1,20 +1,21 @@
 import DOMPurify from "isomorphic-dompurify"
-import { marked, type Renderer } from "marked"
+import { marked } from "marked"
 
 marked.setOptions({ gfm: true, breaks: true })
 
-const renderer: Partial<Renderer> = {
-  image({ href, text }) {
-    if (href?.startsWith("jazz:")) {
-      const id = href.slice("jazz:".length)
-      return `<img data-jazz-id="${id}" alt="${text ?? ""}" class="jazz-image" />`
-    }
-    // Fall through to default rendering for all other URLs
-    return false
+marked.use({
+  renderer: {
+    image({ href, title, text }) {
+      if (href?.startsWith("jazz:")) {
+        const id = href.slice("jazz:".length)
+        return `<img data-jazz-id="${id}" alt="${text ?? ""}" class="jazz-image" />`
+      }
+      // Return default rendering for all other URLs
+      const titleAttr = title ? ` title="${title}"` : ""
+      return `<img src="${href ?? ""}" alt="${text ?? ""}"${titleAttr} />`
+    },
   },
-}
-
-marked.use({ renderer })
+})
 
 export function slideMarkdownToSafeHtml(markdown: string): string {
   const src = markdown.trim() === "" ? "<p></p>" : markdown
