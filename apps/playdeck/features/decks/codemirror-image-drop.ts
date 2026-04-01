@@ -1,16 +1,20 @@
 import { EditorSelection, Prec, type Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
 import type { ImageUploadFn } from "@/features/decks/codemirror-image-paste"
-import { deleteToken, replaceToken } from "@/features/decks/codemirror-image-paste"
+
+type DocChangeFn = (doc: string) => void
 
 /**
  * CodeMirror extension that handles dropping image files into the editor.
  * Non-image drops (text, non-image files) are not intercepted.
  * Multiple image files are processed sequentially.
  *
- * @param onUpload - async function that uploads a Blob and returns `{ id }` or `{ error }`
+ * @param onUpload - async function that uploads a Blob and returns final markdown or an error
  */
-export function imageDropExtension(onUpload: ImageUploadFn): Extension {
+export function imageDropExtension(
+  onUpload: ImageUploadFn,
+  onDocChange?: DocChangeFn,
+): Extension {
   return Prec.high(
     EditorView.domEventHandlers({
       drop(event, view) {
@@ -34,23 +38,45 @@ export function imageDropExtension(onUpload: ImageUploadFn): Extension {
             changes: { from: pos, insert: placeholder },
             selection: EditorSelection.cursor(pos + placeholder.length),
           })
+          onDocChange?.(view.state.doc.toString())
           insertOffset += placeholder.length
 
           onUpload(file).then((result) => {
+            // Find the placeholder token position in current doc
             const current = view.state.doc.toString()
+            const placeholderText = `![${token}]()`
+            const placeholderStart = current.indexOf(placeholderText)
+            
+            if (placeholderStart === -1) return // Token already removed
+            
             if ("error" in result) {
+              // Delete the placeholder (and surrounding newlines if on its own line)
+              let deleteFrom = placeholderStart
+              let deleteTo = placeholderStart + placeholderText.length
+              
+              // Check if preceded by newline
+              if (placeholderStart > 0 && current[placeholderStart - 1] === "\n") {
+                deleteFrom--
+              }
+              // Check if followed by newline (and we didn't already consume one)
+              const afterPlaceholder = placeholderStart + placeholderText.length
+              if (afterPlaceholder < current.length && current[afterPlaceholder] === "\n" && deleteFrom === placeholderStart) {
+                deleteTo++
+              }
+              
               view.dispatch({
-                changes: { from: 0, to: view.state.doc.length, insert: deleteToken(current, token) },
+                changes: { from: deleteFrom, to: deleteTo, insert: "" },
               })
-              return
+            } else {
+              view.dispatch({
+                changes: {
+                  from: placeholderStart,
+                  to: placeholderStart + placeholderText.length,
+                  insert: result.markdown,
+                },
+              })
             }
-            view.dispatch({
-              changes: {
-                from: 0,
-                to: view.state.doc.length,
-                insert: replaceToken(current, token, result.id, "image"),
-              },
-            })
+            onDocChange?.(view.state.doc.toString())
           })
         }
 

@@ -1,8 +1,7 @@
 "use client"
 
 import { useAccount } from "jazz-tools/react"
-import { assertLoaded, Group } from "jazz-tools"
-import { createImage } from "jazz-tools/media"
+import { assertLoaded } from "jazz-tools"
 import {
   startTransition,
   useCallback,
@@ -16,9 +15,11 @@ import {
 import { PlaydeckAccount } from "@/features/jazz/schema"
 import { replaceSlidesFromMarkdown } from "@/features/decks/jazz-deck-mutations"
 import type { DeckSlideView } from "@/features/decks/deck-types"
+import { uploadImageToSupabase } from "@/features/decks/supabase-image-upload"
 import { appendPollSlideMarkdown } from "@/features/decks/parse-slide-poll"
 import { appendQuestionSlideMarkdown } from "@/features/decks/parse-slide-question"
 import type { ImageUploadFn } from "@/features/decks/codemirror-image-paste"
+import { hasPendingImageUpload } from "@/features/decks/codemirror-image-paste"
 import {
   deckSlidesToRevealModels,
   markdownMatchesSlides,
@@ -26,6 +27,7 @@ import {
   slidesToMarkdownDocument,
 } from "@/features/decks/slide-markdown-document"
 import { DeckMarkdownEditor } from "@/features/decks/components/deck-markdown-editor"
+import { extractJazzImageIds } from "@/features/slides/jazz-image-ids"
 import { DeckRevealPreview } from "@/features/slides/deck-reveal-preview"
 import { Button } from "@beyond/design-system"
 
@@ -39,9 +41,18 @@ function initialMarkdown(slides: DeckSlideView[]): string {
 type Props = {
   deckId: string
   slides: DeckSlideView[]
+  onEditorStateChange?: (state: {
+    isDirty: boolean
+    hasPendingUploads: boolean
+    isSaving: boolean
+  }) => void
 }
 
-export function DeckEditorWorkspace({ deckId, slides }: Props) {
+export function DeckEditorWorkspace({
+  deckId,
+  slides,
+  onEditorStateChange,
+}: Props) {
   const me = useAccount(PlaydeckAccount, {
     resolve: { root: { decks: { $each: { slides: { $each: true } } } } },
   })
@@ -54,11 +65,13 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
 
   const markdownRef = useRef(markdown)
   const lastSavedRef = useRef(lastSavedMarkdown)
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const meRef = useRef(me)
+  meRef.current = me
 
-  useEffect(() => {
-    markdownRef.current = markdown
-    lastSavedRef.current = lastSavedMarkdown
-  }, [markdown, lastSavedMarkdown])
+  // Sync refs immediately (not in effect) to avoid race conditions
+  markdownRef.current = markdown
+  lastSavedRef.current = lastSavedMarkdown
 
   const slidesSyncKey = useMemo(
     () =>
@@ -68,7 +81,9 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
     [slides],
   )
 
+  // External sync: only apply if local is clean and content actually differs
   useEffect(() => {
+    // Only sync from server if we haven't made local changes
     if (markdown !== lastSavedMarkdown) return
     const next = initialMarkdown(slides)
     if (next === markdown) return
@@ -76,40 +91,82 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
     startTransition(() => {
       setMarkdown(next)
       setLastSavedMarkdown(next)
-      lastSavedRef.current = next
     })
   }, [slidesSyncKey, slides, markdown, lastSavedMarkdown])
 
-  useEffect(() => {
-    if (markdownRef.current === lastSavedRef.current) return
-    const t = setTimeout(() => {
-      const current = markdownRef.current
-      if (current === lastSavedRef.current) return
-      if (!me.$isLoaded) return
-      assertLoaded(me.root)
+  const saveMarkdown = useCallback(
+    (current: string) => {
+      const lastSaved = lastSavedRef.current
+      const account = meRef.current
+      if (current === lastSaved) return
+      if (hasPendingImageUpload(current)) return
+      if (!account?.$isLoaded) return
+      assertLoaded(account.root)
+
       startSaveTransition(() => {
-        const r = replaceSlidesFromMarkdown(me, deckId, current)
+        const r = replaceSlidesFromMarkdown(account, deckId, current)
         if (!r.ok) {
           setError(r.error)
           return
         }
         setError(undefined)
-        lastSavedRef.current = current
         setLastSavedMarkdown(current)
       })
-    }, AUTOSAVE_MS)
-    return () => clearTimeout(t)
-  }, [markdown, deckId, me])
+    },
+    [deckId],
+  )
 
+  // Save newly resolved Jazz images immediately so refresh/live snapshots can't race them.
+  useEffect(() => {
+    if (markdown === lastSavedMarkdown) return
+    if (hasPendingImageUpload(markdown)) return
+
+    const currentIds = extractJazzImageIds(markdown)
+    if (currentIds.length === 0) return
+
+    const savedIds = new Set(extractJazzImageIds(lastSavedMarkdown))
+    const hasNewResolvedImage = currentIds.some((id) => !savedIds.has(id))
+    if (!hasNewResolvedImage) return
+
+    saveMarkdown(markdown)
+  }, [lastSavedMarkdown, markdown, saveMarkdown])
+
+  // Autosave effect - debounced save to Jazz
+  useEffect(() => {
+    // Clear any existing timer
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
+
+    // Nothing to save if clean
+    if (markdown === lastSavedMarkdown) return
+
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null
+      // Re-read refs at execution time to get latest values
+      const current = markdownRef.current
+      saveMarkdown(current)
+    }, AUTOSAVE_MS)
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+    }
+  }, [deckId, lastSavedMarkdown, markdown, saveMarkdown])
+
+  // Save on unmount
   useEffect(() => {
     return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current)
+      }
       const current = markdownRef.current
-      if (current === lastSavedRef.current) return
-      if (!me.$isLoaded) return
-      assertLoaded(me.root)
-      replaceSlidesFromMarkdown(me, deckId, current)
+      saveMarkdown(current)
     }
-  }, [deckId, me])
+  }, [deckId, saveMarkdown])
 
   const parsed = useMemo(
     () => parseMarkdownDocumentToSlides(markdown),
@@ -140,6 +197,18 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
   )
 
   const isDirty = markdown !== lastSavedMarkdown
+  const hasPendingUploads = useMemo(
+    () => hasPendingImageUpload(markdown),
+    [markdown],
+  )
+
+  useEffect(() => {
+    onEditorStateChange?.({
+      isDirty,
+      hasPendingUploads,
+      isSaving: pending,
+    })
+  }, [hasPendingUploads, isDirty, onEditorStateChange, pending])
 
   const addSlide = () => {
     setMarkdown((m) => {
@@ -152,27 +221,26 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
   const handleImageUpload: ImageUploadFn = useCallback(
     async (blob) => {
       try {
-        if (!me.$isLoaded) return { error: "Not signed in" }
-        const imageGroup = Group.create(me)
-        imageGroup.addMember("everyone", "reader")
-        const image = await createImage(blob, {
-          owner: imageGroup,
-          maxSize: 1024,
-          placeholder: "blur",
-          progressive: true,
-        })
-        return { id: image.$jazz.id }
+        const result = await uploadImageToSupabase(blob)
+        if ("error" in result) {
+          setError(result.error)
+          return result
+        }
+
+        return { markdown: `![image](${result.url})` }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Upload failed"
         setError(msg)
         return { error: msg }
       }
     },
-    [me, setError],
+    [setError],
   )
 
   const statusMessage = error
     ? null
+    : hasPendingUploads
+      ? "Uploading image…"
     : pending
       ? "Syncing…"
       : isDirty

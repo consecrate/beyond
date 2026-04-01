@@ -127,6 +127,15 @@ describe("slidesToMarkdownDocument round-trip", () => {
     expect(out).toMatch(/\n---\n/)
     expect(parseMarkdownDocumentToSlides(out)).toEqual(parsed)
   })
+
+  it("preserves Jazz image markdown through slide serialization", () => {
+    const md = `# Image slide\n\n![diagram](jazz:co_zimg123)\n`
+    const parsed = parseMarkdownDocumentToSlides(md)
+    const out = slidesToMarkdownDocument(viewsFromParsed(parsed))
+
+    expect(out).toContain("![diagram](jazz:co_zimg123)")
+    expect(parseMarkdownDocumentToSlides(out)).toEqual(parsed)
+  })
 })
 
 describe("tryParsePollFromSlideBody", () => {
@@ -251,5 +260,16 @@ describe("presenterRevealSlidesFromSources", () => {
     expect(fromLive[0].poll?.prompt).toBe("Old?")
     expect(fromDeckOnly[0].poll?.prompt).toBe("New?")
     expect(fromLive[0].poll?.pollKey).not.toBe(fromDeckOnly[0].poll?.pollKey)
+  })
+
+  it("preserves Jazz images when switching from deck views to live markdown", () => {
+    const liveMd = `# Image slide\n\n![diagram](jazz:co_zimg123)\n`
+    const deckViews = viewsFromParsed(parseMarkdownDocumentToSlides(liveMd))
+    const fromLive = presenterRevealSlidesFromSources({
+      liveMarkdown: liveMd,
+      deckViews,
+    })
+
+    expect(fromLive[0].html).toContain('data-jazz-id="co_zimg123"')
   })
 })

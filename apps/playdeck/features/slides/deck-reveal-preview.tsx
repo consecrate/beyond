@@ -6,15 +6,18 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  memo,
 } from "react"
+import { useAccount } from "jazz-tools/react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
-import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { useJazzImages } from "@/features/slides/use-jazz-images"
+import { PlaydeckAccount } from "@/features/jazz/schema"
 import { Button, cn } from "@beyond/design-system"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import Reveal from "reveal.js"
 import type { RevealApi } from "reveal.js"
 
@@ -22,6 +25,7 @@ import "reveal.js/reveal.css"
 import "reveal.js/theme/black.css"
 
 const SYNC_DEBOUNCE_MS = 80
+const LAZY_RADIUS = 2
 
 export type DeckRevealPreviewProps = {
   slides: RevealSlideModel[]
@@ -30,6 +34,53 @@ export type DeckRevealPreviewProps = {
   className?: string
 }
 
+/** Memoized slide body to prevent re-renders when other slides change */
+const SlideBody = memo(function SlideBody({
+  slide,
+  slideIndex,
+  activeIndex,
+  me,
+}: {
+  slide: RevealSlideModel
+  slideIndex: number
+  activeIndex: number
+  me: any // Jazz account type is complex, use any for simplicity
+}) {
+  const show = Math.abs(slideIndex - activeIndex) <= LAZY_RADIUS
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Each slide needs its own useJazzImages for the images to work correctly
+  useJazzImages(containerRef, me, slide.html)
+
+  if (slide.poll || slide.question || slide.interactiveError) {
+    return <div className="h-0 w-0 overflow-hidden opacity-0" aria-hidden />
+  }
+
+  if (!show) {
+    return (
+      <div
+        className="flex min-h-[min(70vh,700px)] w-full max-w-4xl items-center justify-center"
+        aria-hidden
+      >
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/40" />
+      </div>
+    )
+  }
+
+  const inner =
+    slide.html.trim() === ""
+      ? '<p class="text-muted-foreground">Empty slide</p>'
+      : slide.html
+
+  return (
+    <div
+      ref={containerRef}
+      className="prose prose-invert max-h-[min(70vh,700px)] w-full max-w-4xl overflow-auto px-2 text-left prose-headings:font-semibold prose-p:leading-relaxed"
+      dangerouslySetInnerHTML={{ __html: inner }}
+    />
+  )
+})
+
 export function DeckRevealPreview({
   slides,
   slidesContentKey,
@@ -37,6 +88,7 @@ export function DeckRevealPreview({
 }: DeckRevealPreviewProps) {
   const [activeIndex, setActiveIndex] = useState(0)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [revealReady, setRevealReady] = useState(false)
 
   const revealRef = useRef<HTMLDivElement>(null)
   const deckApiRef = useRef<RevealApi | null>(null)
@@ -83,6 +135,7 @@ export function DeckRevealPreview({
         deck.slide(0, 0)
         deckApiRef.current = deck
         setActiveIndex(deck.getIndices().h)
+        setRevealReady(true)
         el.addEventListener("slidechanged", wrapped)
       })
       .catch(() => {
@@ -91,6 +144,7 @@ export function DeckRevealPreview({
 
     return () => {
       cancelled = true
+      setRevealReady(false)
       el.removeEventListener("slidechanged", wrapped)
       deck.destroy()
       deckApiRef.current = null
@@ -111,6 +165,15 @@ export function DeckRevealPreview({
       if (syncTimerRef.current !== null) clearTimeout(syncTimerRef.current)
     }
   }, [slidesContentKey, numSlides])
+
+  // Single useAccount but memoize to prevent re-renders
+  const me = useAccount(PlaydeckAccount, {
+    select: (account) => (account.$isLoaded ? account : null),
+  })
+  const stableMeRef = useRef(me)
+  if (me !== stableMeRef.current) {
+    stableMeRef.current = me
+  }
 
   const goPrev = useCallback(() => {
     deckApiRef.current?.prev()
@@ -183,10 +246,11 @@ export function DeckRevealPreview({
                       className="flex items-center justify-center !p-4"
                       data-background-color="#0d1117"
                     >
-                      <RevealSlideBody
+                      <SlideBody
                         slide={slide}
                         slideIndex={i}
                         activeIndex={activeIndex}
+                        me={stableMeRef.current}
                       />
                     </section>
                   ))}

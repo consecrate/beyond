@@ -1,14 +1,27 @@
 import { EditorSelection, Prec, type Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
 
-export type ImageUploadFn = (blob: Blob) => Promise<{ id: string } | { error: string }>
+export type ImageUploadFn = (
+  blob: Blob,
+) => Promise<{ markdown: string } | { error: string }>
+type DocChangeFn = (doc: string) => void
+
+const UPLOADING_TOKEN_RE = /!\[uploading-[^[\]\n()]+\]\(\)/u
+
+export function hasPendingImageUpload(doc: string): boolean {
+  return UPLOADING_TOKEN_RE.test(doc)
+}
 
 /**
- * Replace `![uploading-<token>]()` with `![alt](jazz:<id>)` in a plain string.
+ * Replace `![uploading-<token>]()` with final image markdown in a plain string.
  * Only replaces the first occurrence.
  */
-export function replaceToken(doc: string, token: string, id: string, alt: string): string {
-  return doc.replace(`![${token}]()`, `![${alt}](jazz:${id})`)
+export function replaceToken(
+  doc: string,
+  token: string,
+  finalMarkdown: string,
+): string {
+  return doc.replace(`![${token}]()`, finalMarkdown)
 }
 
 /**
@@ -31,9 +44,12 @@ export function deleteToken(doc: string, token: string): string {
  * CodeMirror extension that intercepts paste events containing image files.
  * Non-image pastes are not intercepted — normal paste behaviour is preserved.
  *
- * @param onUpload - async function that uploads a Blob and returns `{ id }` or `{ error }`
+ * @param onUpload - async function that uploads a Blob and returns final markdown or an error
  */
-export function imagePasteExtension(onUpload: ImageUploadFn): Extension {
+export function imagePasteExtension(
+  onUpload: ImageUploadFn,
+  onDocChange?: DocChangeFn,
+): Extension {
   return Prec.high(
     EditorView.domEventHandlers({
       paste(event, view) {
@@ -56,22 +72,43 @@ export function imagePasteExtension(onUpload: ImageUploadFn): Extension {
             changes: { from, insert: placeholder },
             selection: EditorSelection.cursor(from + placeholder.length),
           })
+          onDocChange?.(view.state.doc.toString())
 
           onUpload(blob).then((result) => {
+            // Find the placeholder token position in current doc
             const current = view.state.doc.toString()
+            const placeholderText = `![${token}]()`
+            const placeholderStart = current.indexOf(placeholderText)
+            
+            if (placeholderStart === -1) return // Token already removed
+            
             if ("error" in result) {
+              // Delete the placeholder (and surrounding newlines if on its own line)
+              let deleteFrom = placeholderStart
+              let deleteTo = placeholderStart + placeholderText.length
+              
+              // Check if preceded by newline
+              if (placeholderStart > 0 && current[placeholderStart - 1] === "\n") {
+                deleteFrom--
+              }
+              // Check if followed by newline (and we didn't already consume one)
+              if (deleteTo < current.length && current[deleteTo] === "\n" && deleteFrom === placeholderStart) {
+                deleteTo++
+              }
+              
               view.dispatch({
-                changes: { from: 0, to: view.state.doc.length, insert: deleteToken(current, token) },
+                changes: { from: deleteFrom, to: deleteTo, insert: "" },
               })
-              return
+            } else {
+              view.dispatch({
+                changes: {
+                  from: placeholderStart,
+                  to: placeholderStart + placeholderText.length,
+                  insert: result.markdown,
+                },
+              })
             }
-            view.dispatch({
-              changes: {
-                from: 0,
-                to: view.state.doc.length,
-                insert: replaceToken(current, token, result.id, "image"),
-              },
-            })
+            onDocChange?.(view.state.doc.toString())
           })
         }
 

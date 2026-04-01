@@ -12,8 +12,6 @@ import { cn } from "@beyond/design-system"
 import { markdownFormattingKeymap } from "@/features/decks/codemirror-markdown-formatting"
 import {
   imagePasteExtension,
-  deleteToken,
-  replaceToken,
   type ImageUploadFn,
 } from "@/features/decks/codemirror-image-paste"
 import { imageDropExtension } from "@/features/decks/codemirror-image-drop"
@@ -35,11 +33,31 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingInsertAtRef = useRef<number | null>(null)
+  const valueRef = useRef(value)
+  valueRef.current = value // Keep ref in sync with prop
 
   const handleImageCommand = useCallback((insertAt: number) => {
     pendingInsertAtRef.current = insertAt
     fileInputRef.current?.click()
   }, [])
+
+  // Use refs for callbacks to avoid recreating extensions
+  const onChangeRef = useRef(onChange)
+  const onImageUploadRef = useRef(onImageUpload)
+  onChangeRef.current = onChange
+  onImageUploadRef.current = onImageUpload
+
+  const syncParentFromView = useCallback(
+    (nextValue: string) => {
+      onChangeRef.current(nextValue)
+    },
+    [],
+  )
+
+  const stableOnImageUpload = useCallback<ImageUploadFn>(
+    (blob) => onImageUploadRef.current(blob),
+    [],
+  )
 
   const extensions = useMemo(
     () => [
@@ -47,11 +65,11 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
       EditorView.lineWrapping,
       themeExt,
       markdownFormattingKeymap,
-      imagePasteExtension(onImageUpload),
-      imageDropExtension(onImageUpload),
+      imagePasteExtension(stableOnImageUpload, syncParentFromView),
+      imageDropExtension(stableOnImageUpload, syncParentFromView),
       imageCommandExtension(handleImageCommand),
     ],
-    [themeExt, onImageUpload, handleImageCommand],
+    [themeExt, stableOnImageUpload, syncParentFromView, handleImageCommand],
   )
 
   const handleFileSelected = useCallback(
@@ -69,10 +87,15 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
 
       if (!view) {
         // Fallback: just call onImageUpload and insert into the document state
-        const token = `uploading-${crypto.randomUUID()}`
-        onImageUpload(file).then((result) => {
-          if ("id" in result) {
-            onChange(value.slice(0, insertAt) + `![image](jazz:${result.id})\n` + value.slice(insertAt))
+        // Read from ref at resolution time to get latest value
+        onImageUploadRef.current(file).then((result) => {
+          if ("markdown" in result) {
+            const currentValue = valueRef.current
+            onChangeRef.current(
+              currentValue.slice(0, insertAt) +
+                `${result.markdown}\n` +
+                currentValue.slice(insertAt),
+            )
           }
         })
         return
@@ -84,25 +107,41 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
       view.dispatch({
         changes: { from: insertAt, insert: placeholder },
       })
+      syncParentFromView(view.state.doc.toString())
 
-      onImageUpload(file).then((result) => {
+      onImageUploadRef.current(file).then((result) => {
+        // Find the placeholder token position in current doc
         const current = view.state.doc.toString()
+        const placeholderText = `![${token}]()`
+        const placeholderStart = current.indexOf(placeholderText)
+        
+        if (placeholderStart === -1) return // Token already removed
+        
         if ("error" in result) {
+          // Delete the placeholder with surrounding newlines
+          let deleteFrom = placeholderStart
+          let deleteTo = placeholderStart + placeholderText.length
+          if (deleteTo < current.length && current[deleteTo] === "\n") {
+            deleteTo++
+          }
           view.dispatch({
-            changes: { from: 0, to: view.state.doc.length, insert: deleteToken(current, token) },
+            changes: { from: deleteFrom, to: deleteTo, insert: "" },
           })
-          return
+        } else {
+          // Include the newline in the replacement
+          const actualPlaceholder = placeholderText + (current[placeholderStart + placeholderText.length] === "\n" ? "\n" : "")
+          view.dispatch({
+            changes: {
+              from: placeholderStart,
+              to: placeholderStart + actualPlaceholder.length,
+              insert: result.markdown + "\n",
+            },
+          })
         }
-        view.dispatch({
-          changes: {
-            from: 0,
-            to: view.state.doc.length,
-            insert: replaceToken(current, token, result.id, "image"),
-          },
-        })
+        syncParentFromView(view.state.doc.toString())
       })
     },
-    [onImageUpload, value, onChange],
+    [syncParentFromView],
   )
 
   return (

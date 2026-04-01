@@ -1,3 +1,6 @@
+"use client"
+
+import { useCallback, useState } from "react"
 import Link from "next/link"
 
 import type { DeckSlideView } from "@/features/decks/deck-types"
@@ -21,6 +24,30 @@ export function DeckMarkdownWorkspace({
   displayName,
 }: Props) {
   const presentHref = `/presenter/decks/${deckId}/present`
+  const [editorState, setEditorState] = useState({
+    isDirty: false,
+    hasPendingUploads: false,
+    isSaving: false,
+  })
+
+  const handleEditorStateChange = useCallback(
+    (next: typeof editorState) => {
+      setEditorState((prev) =>
+        prev.isDirty === next.isDirty &&
+          prev.hasPendingUploads === next.hasPendingUploads &&
+          prev.isSaving === next.isSaving
+          ? prev
+          : next,
+      )
+    },
+    [],
+  )
+
+  const presentDisabled =
+    editorState.isDirty || editorState.hasPendingUploads || editorState.isSaving
+  const presentDisabledTitle = editorState.hasPendingUploads
+    ? "Wait for image upload to finish before presenting."
+    : "Wait for changes to save before presenting."
 
   return (
     <div className="flex h-svh min-h-0 flex-col overflow-hidden">
@@ -47,21 +74,41 @@ export function DeckMarkdownWorkspace({
           </div>
         </div>
         <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-          <Link
-            href={presentHref}
-            className={cn(
-              buttonVariants({ variant: "default", size: "sm" }),
-              "shrink-0 gap-2",
-            )}
-          >
-            <Presentation className="h-4 w-4" />
-            Present
-          </Link>
+          {presentDisabled ? (
+            <button
+              type="button"
+              disabled
+              title={presentDisabledTitle}
+              className={cn(
+                buttonVariants({ variant: "default", size: "sm" }),
+                "shrink-0 gap-2 opacity-60",
+              )}
+            >
+              <Presentation className="h-4 w-4" />
+              Present
+            </button>
+          ) : (
+            <Link
+              href={presentHref}
+              className={cn(
+                buttonVariants({ variant: "default", size: "sm" }),
+                "shrink-0 gap-2",
+              )}
+            >
+              <Presentation className="h-4 w-4" />
+              Present
+            </Link>
+          )}
           <PresenterAccountMenu displayName={displayName} />
         </div>
       </header>
 
-      <DeckEditorWorkspace key={deckId} deckId={deckId} slides={slides} />
+      <DeckEditorWorkspace
+        key={deckId}
+        deckId={deckId}
+        slides={slides}
+        onEditorStateChange={handleEditorStateChange}
+      />
     </div>
   )
 }

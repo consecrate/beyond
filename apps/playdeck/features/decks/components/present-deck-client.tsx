@@ -4,13 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 
 import type { Loaded } from "jazz-tools"
-import { assertLoaded } from "jazz-tools"
+import { assertLoaded, ImageDefinition } from "jazz-tools"
 import { useAccount } from "jazz-tools/react"
 import { useCoState } from "jazz-tools/react"
 
 import { coValueId, deckSlidesToViews } from "@/features/decks/deck-map"
 import { findDeck } from "@/features/decks/jazz-deck-mutations"
-import { presenterRevealSlidesFromSources } from "@/features/decks/slide-markdown-document"
+import {
+  presenterRevealSlidesFromSources,
+  slidesToMarkdownDocument,
+} from "@/features/decks/slide-markdown-document"
 import {
   closePoll,
   endLiveSession,
@@ -22,7 +25,32 @@ import {
   kickPlayer,
 } from "@/features/jazz/live-session-mutations"
 import { LiveSession, PlaydeckAccount } from "@/features/jazz/schema"
+import { extractJazzImageIds } from "@/features/slides/jazz-image-ids"
 import { PresentRevealLoader } from "@/features/slides/present-reveal-loader"
+
+async function findUnreadableDeckImages(
+  me: Loaded<typeof PlaydeckAccount>,
+  markdown: string,
+): Promise<string[]> {
+  const ids = extractJazzImageIds(markdown)
+  if (ids.length === 0) return []
+
+  const results = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const imageDef = await ImageDefinition.load(id, {
+          as: me,
+          resolve: { original: true },
+        } as Parameters<typeof ImageDefinition.load>[1])
+        return imageDef?.$isLoaded ? null : id
+      } catch {
+        return id
+      }
+    }),
+  )
+
+  return results.filter((id): id is string => id != null)
+}
 
 function RedirectToDecks() {
   const router = useRouter()
@@ -95,6 +123,15 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
       assertLoaded(me.root)
       const deck = findDeck(me.root, deckId)
       if (!deck) return
+
+      const markdown = slidesToMarkdownDocument(deckSlidesToViews(deck))
+      const unreadableImages = await findUnreadableDeckImages(me, markdown)
+      if (unreadableImages.length > 0) {
+        window.alert(
+          `Some slide images are not readable yet. Wait a moment and try again.\n\nMissing: ${unreadableImages.slice(0, 3).join(", ")}`,
+        )
+        return
+      }
 
       const result = startLiveSession(me, deck, currentSlideIndex)
       if (!result.ok) {

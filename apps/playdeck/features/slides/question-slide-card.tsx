@@ -1,10 +1,15 @@
 "use client"
 
-import { useMemo } from "react"
+import { useContext, useMemo, useRef } from "react"
 
+import type { Loaded } from "jazz-tools"
 import type { QuestionBlock } from "@/features/decks/parse-slide-question"
 import { slideMarkdownToSafeHtml } from "@/features/decks/render-slide-markdown"
+import { PlaydeckAccount } from "@/features/jazz/schema"
+import { useJazzImages } from "@/features/slides/use-jazz-images"
 import { Button, cn } from "@beyond/design-system"
+import { JazzContext } from "jazz-tools/react-core"
+import { useAccount } from "jazz-tools/react"
 
 export type QuestionSlideVariant = "preview" | "audience" | "presenter"
 export type QuestionSlideLayout = "card" | "overlay"
@@ -242,23 +247,7 @@ function AudienceQuestionRevealFeedback({
   )
 }
 
-export function QuestionSlideCard({
-  block,
-  variant,
-  state,
-  resultsVisible,
-  layout = "card",
-  counts,
-  answeredCount,
-  myAnswer,
-  audienceAccountId,
-  onSubmit,
-  submitPending,
-  submitError,
-  accountReady = true,
-  onStart,
-  onStop,
-}: {
+type QuestionSlideCardProps = {
   block: QuestionBlock
   variant: QuestionSlideVariant
   state: QuestionCardState
@@ -274,13 +263,56 @@ export function QuestionSlideCard({
   accountReady?: boolean
   onStart?: () => void
   onStop?: () => void
+}
+
+function QuestionSlideCardWithJazz(props: QuestionSlideCardProps) {
+  const me = useAccount(PlaydeckAccount, {
+    select: (account) => (account.$isLoaded ? account : null),
+  })
+
+  return <QuestionSlideCardContent {...props} me={me} />
+}
+
+function QuestionSlideCardContent({
+  block,
+  variant,
+  state,
+  resultsVisible,
+  layout = "card",
+  counts,
+  answeredCount,
+  myAnswer,
+  audienceAccountId,
+  onSubmit,
+  submitPending,
+  submitError,
+  accountReady = true,
+  onStart,
+  onStop,
+  me,
+}: QuestionSlideCardProps & {
+  me: Loaded<typeof PlaydeckAccount> | null
 }) {
   const overlay = layout === "overlay"
   const audienceTheater = overlay && variant === "audience"
+  const articleRef = useRef<HTMLElement>(null)
   const orderedRows = useMemo(
     () => shuffledQuestionRows(block, audienceAccountId, variant),
     [audienceAccountId, block, variant],
   )
+  const questionMarkdownKey = useMemo(
+    () =>
+      JSON.stringify([
+        block.prompt,
+        ...orderedRows.map((row) => row.text),
+        variant,
+        state,
+        resultsVisible ?? null,
+        myAnswer ?? null,
+      ]),
+    [block.prompt, myAnswer, orderedRows, resultsVisible, state, variant],
+  )
+  useJazzImages(articleRef, me, questionMarkdownKey)
 
   const showPreview = variant === "preview"
   const showIdle = variant !== "preview" && state === "idle"
@@ -297,7 +329,7 @@ export function QuestionSlideCard({
   const showAudienceAwaitingSessionEnd =
     variant === "audience" && state === "revealed" && !showResults
   const hideOptionRowsUntilReveal =
-    overlay && variant === "presenter" && !showResults
+    overlay && variant === "presenter" && state === "revealed" && !showResults
   const totalAnswers = counts.reduce((sum, count) => sum + count, 0)
   const myRow = orderedRows.find((row) => row.canonicalIndex === myAnswer) ?? null
   const correctRow = orderedRows.find((row) => row.isCorrect) ?? null
@@ -312,7 +344,7 @@ export function QuestionSlideCard({
     const submitDisabled = !canSubmit
 
     return (
-      <article className="flex h-full min-h-0 w-full flex-col">
+      <article ref={articleRef} className="flex h-full min-h-0 w-full flex-col">
         {showIdle ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="text-2xl font-bold text-foreground">Get ready!</p>
@@ -416,6 +448,7 @@ export function QuestionSlideCard({
 
   return (
     <article
+      ref={articleRef}
       className={cn(
         "w-full",
         overlay
@@ -620,4 +653,14 @@ export function QuestionSlideCard({
       ) : null}
     </article>
   )
+}
+
+export function QuestionSlideCard(props: QuestionSlideCardProps) {
+  const jazzContext = useContext(JazzContext)
+
+  if (!jazzContext) {
+    return <QuestionSlideCardContent {...props} me={null} />
+  }
+
+  return <QuestionSlideCardWithJazz {...props} />
 }

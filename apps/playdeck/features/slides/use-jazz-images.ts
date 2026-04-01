@@ -1,28 +1,68 @@
 "use client"
 
-import { useEffect, useRef } from "react"
-import { loadImage } from "jazz-tools/media"
+import { useEffect, useRef, useId } from "react"
+import { ImageDefinition } from "jazz-tools"
 import type { Loaded } from "jazz-tools"
 import type { PlaydeckAccount } from "@/features/jazz/schema"
+
+const PRESENTATION_IMAGE_MAX_WIDTH = 960
+
+// Global cache to persist blob URLs across re-renders
+const imageCache = new Map<string, { url: string; width: number }>()
+// Track which component instance is responsible for each pending load
+const pendingLoads = new Map<string, string>() // imageId -> instanceId
+
+/** Apply cached URL to all matching img elements in the document */
+function applyCachedUrl(id: string, url: string) {
+  document.querySelectorAll<HTMLImageElement>(`img[data-jazz-id="${id}"]`).forEach((img) => {
+    img.src = url
+    img.classList.remove("jazz-image--failed")
+    img.classList.remove("jazz-image--loading")
+  })
+}
+
+function markLoadFailed(id: string) {
+  document.querySelectorAll<HTMLImageElement>(`img[data-jazz-id="${id}"]`).forEach((img) => {
+    img.classList.remove("jazz-image--loading")
+    img.classList.add("jazz-image--failed")
+  })
+}
+
+function cacheLoadedOriginal(
+  id: string,
+  imageDef: unknown,
+): boolean {
+  const original = (imageDef as {
+    original?: { $isLoaded?: boolean; toBlob?: () => Blob | undefined }
+    originalSize?: [number, number]
+  }).original
+  if (!original?.$isLoaded || typeof original.toBlob !== "function") return false
+
+  const blob = original.toBlob()
+  if (!blob) return false
+
+  const url = URL.createObjectURL(blob)
+  const width = Math.min(
+    (imageDef as { originalSize?: [number, number] }).originalSize?.[0] ??
+      PRESENTATION_IMAGE_MAX_WIDTH,
+    PRESENTATION_IMAGE_MAX_WIDTH,
+  )
+  imageCache.set(id, { url, width })
+  applyCachedUrl(id, url)
+  return true
+}
 
 /**
  * Resolves all `<img data-jazz-id="co_z...">` elements inside `containerRef`
  * to blob URLs using Jazz image loading.
- *
- * Must be called in a "use client" component.
- * Safe to call on SSR — guards `typeof window === 'undefined'`.
  */
 export function useJazzImages(
   containerRef: React.RefObject<HTMLElement | null>,
   me: Loaded<typeof PlaydeckAccount> | null | undefined,
-  /**
-   * Pass a content-derived key (e.g. the HTML string or markdown) so the
-   * hook re-runs when new jazz images appear in the rendered content.
-   * Defaults to "" — always present so the dep array never changes size.
-   */
   contentKey: string = "",
 ) {
-  const objectUrlsRef = useRef<string[]>([])
+  const instanceId = useId()
+  const unsubscribesRef = useRef<Map<string, () => void>>(new Map())
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -36,54 +76,110 @@ export function useJazzImages(
     )
     if (elements.length === 0) return
 
-    let cancelled = false
+    const idsWeStartedLoading: string[] = []
 
-    async function resolveImages() {
-      for (const img of elements) {
-        if (cancelled) break
+    for (const img of elements) {
+      const id = img.dataset.jazzId
+      if (!id) continue
 
-        const id = img.dataset.jazzId
-        if (!id) continue
+      // If we already have this image cached, apply it
+      const cached = imageCache.get(id)
+      if (cached) {
+        applyCachedUrl(id, cached.url)
+        continue
+      }
 
-        try {
-          // loadImage loads the ImageDefinition with resolve: { original: true }
-          // then returns the original FileStream — works reliably for all images
-          const result = await loadImage(id)
+      // If another instance is loading, skip but don't mark as ours
+      const loadingInstance = pendingLoads.get(id)
+      if (loadingInstance && loadingInstance !== instanceId) continue
 
-          if (cancelled) break
+      // If we already have a subscription, skip
+      if (unsubscribesRef.current.has(id)) continue
 
-          if (!result) {
-            img.classList.add("jazz-image--failed")
-            continue
+      // Mark this instance as responsible for this load
+      pendingLoads.set(id, instanceId)
+      idsWeStartedLoading.push(id)
+
+      // Load as the current account so shared-reader permissions are respected.
+      ImageDefinition.load(id, {
+        as: me,
+        resolve: { original: true },
+      } as Parameters<typeof ImageDefinition.load>[1])
+        .then((imageDef) => {
+          // Check if we're still responsible (component might have unmounted)
+          if (pendingLoads.get(id) !== instanceId) return
+
+          if (!imageDef?.$isLoaded) {
+            pendingLoads.delete(id)
+            markLoadFailed(id)
+            return
           }
 
-          const blob = result.image.toBlob()
-          if (!blob) {
-            img.classList.add("jazz-image--failed")
-            continue
+          // Show placeholder immediately if available
+          if (imageDef.placeholderDataURL && !imageCache.has(id)) {
+            applyCachedUrl(id, imageDef.placeholderDataURL)
           }
 
-          const url = URL.createObjectURL(blob)
-          objectUrlsRef.current.push(url)
-          img.src = url
-          img.classList.remove("jazz-image--failed")
-        } catch {
-          if (!cancelled) {
-            img.classList.add("jazz-image--failed")
+          // If Jazz already resolved the original in the initial load, use it now.
+          if (cacheLoadedOriginal(id, imageDef)) {
+            pendingLoads.delete(id)
+            return
           }
+
+          // Subscribe to get the image when data syncs
+          const unsubscribe = imageDef.$jazz.subscribe({}, () => {
+            // Already cached? Done - unsubscribe
+            if (imageCache.has(id)) {
+              unsubscribe()
+              unsubscribesRef.current.delete(id)
+              return
+            }
+
+            // Check if we're still responsible
+            if (pendingLoads.get(id) !== instanceId) return
+
+            if (cacheLoadedOriginal(id, imageDef)) {
+              pendingLoads.delete(id)
+              unsubscribe()
+              unsubscribesRef.current.delete(id)
+            }
+          })
+
+          unsubscribesRef.current.set(id, unsubscribe)
+        })
+        .catch(() => {
+          if (pendingLoads.get(id) === instanceId) {
+            pendingLoads.delete(id)
+            markLoadFailed(id)
+          }
+        })
+    }
+
+    // Cleanup: release pending loads we started when effect re-runs
+    return () => {
+      for (const id of idsWeStartedLoading) {
+        if (pendingLoads.get(id) === instanceId) {
+          pendingLoads.delete(id)
         }
       }
     }
-
-    resolveImages()
-
-    return () => {
-      cancelled = true
-      for (const url of objectUrlsRef.current) {
-        URL.revokeObjectURL(url)
-      }
-      objectUrlsRef.current = []
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerRef, me?.$isLoaded, contentKey])
+  }, [containerRef, me?.$isLoaded, contentKey, instanceId])
+
+  // Cleanup subscriptions on unmount
+  useEffect(() => {
+    const currentInstanceId = instanceId
+    return () => {
+      for (const unsub of unsubscribesRef.current.values()) {
+        unsub()
+      }
+      unsubscribesRef.current.clear()
+      // Release any pending loads owned by this instance
+      for (const [id, owner] of pendingLoads.entries()) {
+        if (owner === currentInstanceId) {
+          pendingLoads.delete(id)
+        }
+      }
+    }
+  }, [instanceId])
 }
