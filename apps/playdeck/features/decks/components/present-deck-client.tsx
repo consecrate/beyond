@@ -23,6 +23,16 @@ import {
   updateLiveSlideIndex,
   setLobbyVisible,
   kickPlayer,
+  startTeamFormation,
+  assignTeamLeader,
+  openTeamJoining,
+  autoAssignRemainingTeams,
+  startGameStore,
+  startGameplay,
+  resetBattleTargetSelection,
+  showBattleLog,
+  showPodium,
+  leaveBattleRoyaleAfterPodium,
 } from "@/features/jazz/live-session-mutations"
 import { LiveSession, PlaydeckAccount } from "@/features/jazz/schema"
 import { extractJazzImageIds } from "@/features/slides/jazz-image-ids"
@@ -90,6 +100,10 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
       closed_poll_keys: true,
       question_submissions: { $each: true },
       question_states: { $each: true },
+      teams: { $each: true },
+      battle_state: {
+        round_summary: { entries: { $each: true } },
+      },
     },
   })
 
@@ -243,6 +257,121 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     [me, liveSessionSub],
   )
 
+  const handleStartTeamFormation = useCallback(
+    (numTeams: number) => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      startTeamFormation(me, session, numTeams)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleAssignTeamLeader = useCallback(
+    (teamId: string, accountId: string | undefined) => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      assignTeamLeader(me, session, teamId, accountId)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleOpenTeamJoining = useCallback(
+    () => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      openTeamJoining(me, session)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleAutoAssignTeams = useCallback(
+    () => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      autoAssignRemainingTeams(me, session)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleStartGameStore = useCallback(
+    () => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      startGameStore(me, session)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleStartGameplay = useCallback(
+    () => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      startGameplay(me, session)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleResetBattleRound = useCallback(() => {
+    if (!me.$isLoaded) return
+    const session = liveSessionSub.$isLoaded
+      ? liveSessionSub
+      : liveSessionRef.current
+    if (!session) return
+    assertLoaded(me)
+    resetBattleTargetSelection(me, session)
+  }, [me, liveSessionSub])
+
+  const handleShowBattleLog = useCallback(() => {
+    if (!me.$isLoaded) return
+    const session = liveSessionSub.$isLoaded
+      ? liveSessionSub
+      : liveSessionRef.current
+    if (!session) return
+    assertLoaded(me)
+    const result = showBattleLog(me, session)
+    if (!result.ok) {
+      window.alert(result.error)
+    }
+  }, [me, liveSessionSub])
+
+  const handleShowPodium = useCallback(() => {
+    if (!me.$isLoaded) return
+    const session = liveSessionSub.$isLoaded
+      ? liveSessionSub
+      : liveSessionRef.current
+    if (!session) return
+    assertLoaded(me)
+    const result = showPodium(me, session)
+    if (!result.ok) {
+      window.alert(result.error)
+    }
+  }, [me, liveSessionSub])
+
+  const handleLeaveBattleRoyaleAfterPodium = useCallback(() => {
+    if (!me.$isLoaded) return
+    const session = liveSessionSub.$isLoaded
+      ? liveSessionSub
+      : liveSessionRef.current
+    if (!session) return
+    assertLoaded(me)
+    const result = leaveBattleRoyaleAfterPodium(me, session)
+    if (!result.ok) {
+      window.alert(result.error)
+    }
+  }, [me, liveSessionSub])
+
   const handleEndLive = useCallback(() => {
     tearDownLiveSession({ keepalive: false })
     setJoinCode(null)
@@ -314,6 +443,16 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
         onStopQuestion: handleStopQuestion,
         onSetLobbyVisible: handleSetLobbyVisible,
         onKickPlayer: handleKickPlayer,
+        onStartTeamFormation: handleStartTeamFormation,
+        onAssignTeamLeader: handleAssignTeamLeader,
+        onOpenTeamJoining: handleOpenTeamJoining,
+        onAutoAssignTeams: handleAutoAssignTeams,
+        onStartGameStore: handleStartGameStore,
+        onStartGameplay: handleStartGameplay,
+        onResetBattleRound: handleResetBattleRound,
+        onShowBattleLog: handleShowBattleLog,
+        onShowPodium: handleShowPodium,
+        onLeaveBattleRoyaleAfterPodium: handleLeaveBattleRoyaleAfterPodium,
       }}
     />
   )

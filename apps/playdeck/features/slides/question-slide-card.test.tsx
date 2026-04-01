@@ -20,7 +20,7 @@ const baseQuestion: QuestionBlock = {
 
 describe("QuestionSlideCard", () => {
   // Audience + overlay: each option is a button; one click invokes onSubmit(canonicalIndex) (no separate confirm).
-  it("shows presenter progress while open without revealing correctness", () => {
+  it("shows presenter progress while open without revealing answer rows or correctness", () => {
     render(
       <QuestionSlideCard
         block={baseQuestion}
@@ -35,7 +35,7 @@ describe("QuestionSlideCard", () => {
 
     expect(screen.getByText("18 responses")).toBeInTheDocument()
     expect(screen.getByText("What is the capital of Vietnam?")).toBeInTheDocument()
-    expect(screen.getByText("Hanoi")).toBeInTheDocument()
+    expect(screen.queryByText("Hanoi")).not.toBeInTheDocument()
     expect(screen.queryByText("Correct answer")).not.toBeInTheDocument()
   })
 

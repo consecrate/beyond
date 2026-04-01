@@ -14,12 +14,15 @@ import {
   isPollClosed,
   questionStatus,
 } from "@/features/jazz/live-session-mutations"
-import type { LiveSession } from "@/features/jazz/schema"
+import type { LiveSession, SessionPlayer } from "@/features/jazz/schema"
 import { PlaydeckAccount } from "@/features/jazz/schema"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
 import { useJazzImages } from "@/features/slides/use-jazz-images"
+import { BattleLog } from "@/features/slides/battle-log"
+import { BattlePodium } from "@/features/slides/battle-podium"
+import { BattleRoyaleArena } from "@/features/slides/battle-royale-arena"
 import { Button, buttonVariants, cn } from "@beyond/design-system"
 import {
   ChevronLeft,
@@ -28,6 +31,7 @@ import {
   Loader2,
   Minimize2,
   Radio,
+  Star,
   Users,
   X,
 } from "lucide-react"
@@ -51,6 +55,20 @@ export type DeckLiveControls = {
   onClosePoll?: (pollKey: string) => void | Promise<void>
   onStartQuestion?: (questionKey: string) => void | Promise<void>
   onStopQuestion?: (questionKey: string, correctOptionIndex?: number) => void | Promise<void>
+  onStartTeamFormation?: (numTeams: number) => void | Promise<void>
+  onAssignTeamLeader?: (teamId: string, accountId: string | undefined) => void | Promise<void>
+  onOpenTeamJoining?: () => void | Promise<void>
+  onAutoAssignTeams?: () => void | Promise<void>
+  onStartGameStore?: () => void | Promise<void>
+  onStartGameplay?: () => void | Promise<void>
+  /** Reset battle targets / phase before advancing to the next question slide (presenter only). */
+  onResetBattleRound?: () => void | Promise<void>
+  /** After revealed results, move everyone to the shared Battle Log screen (presenter only). */
+  onShowBattleLog?: () => void | Promise<void>
+  /** After battle log on the final battle question, show the Podium (presenter only). */
+  onShowPodium?: () => void | Promise<void>
+  /** Leave battle royale after Podium and return to normal slides (presenter only). */
+  onLeaveBattleRoyaleAfterPodium?: () => void | Promise<void>
 }
 
 export type DeckRevealPresenterProps = {
@@ -65,6 +83,66 @@ const LAZY_RADIUS = 2
 
 const REVEAL_WIDTH = 960
 const REVEAL_HEIGHT = 700
+
+const BATTLE_ROYALE_TITLE_LC = "battle royale"
+
+/** First question slide after `# Battle Royale`, else first slide with a question in the deck. */
+export function findFirstBattleQuestionSlideIndex(
+  slides: RevealSlideModel[],
+): number | null {
+  const n = slides.length
+  if (n < 1) return null
+
+  let battleRoyaleIdx = -1
+  for (let i = 0; i < n; i++) {
+    if (slides[i]?.title?.trim().toLowerCase() === BATTLE_ROYALE_TITLE_LC) {
+      battleRoyaleIdx = i
+      break
+    }
+  }
+
+  if (battleRoyaleIdx >= 0) {
+    for (let j = battleRoyaleIdx + 1; j < n; j++) {
+      if (slides[j]?.question) return j
+    }
+  }
+
+  for (let k = 0; k < n; k++) {
+    if (slides[k]?.question) return k
+  }
+
+  return null
+}
+
+/** Last question slide in the Battle Royale section (after `# Battle Royale`), else last question in deck. */
+export function findLastBattleQuestionSlideIndex(
+  slides: RevealSlideModel[],
+): number | null {
+  const n = slides.length
+  if (n < 1) return null
+
+  let battleRoyaleIdx = -1
+  for (let i = 0; i < n; i++) {
+    if (slides[i]?.title?.trim().toLowerCase() === BATTLE_ROYALE_TITLE_LC) {
+      battleRoyaleIdx = i
+      break
+    }
+  }
+
+  let lastQuestionIdx = -1
+  if (battleRoyaleIdx >= 0) {
+    for (let j = battleRoyaleIdx + 1; j < n; j++) {
+      if (slides[j]?.question) lastQuestionIdx = j
+    }
+    if (lastQuestionIdx >= 0) return lastQuestionIdx
+  }
+
+  for (let k = n - 1; k >= 0; k--) {
+    if (slides[k]?.question) return k
+  }
+
+  return null
+}
 
 export function RevealSlideBody({
   slide,
@@ -303,7 +381,18 @@ export function DeckRevealPresenter({
     setActiveIndex(h)
     replaceSlideQuery(h)
     liveSlideSyncRef.current?.(h)
-  }, [replaceSlideQuery])
+
+    if (live?.isActive && live.liveSession && live.onSetLobbyVisible) {
+      const slideTitle = slides[h]?.title?.trim()?.toLowerCase() || ""
+      if (slideTitle === "battle royale") {
+        live.onSetLobbyVisible(true)
+        // Ensure game phase is set to lobby so we can do team formation again if needed, or just let them go to store.
+        if (live.liveSession.game_phase === "playing" || !live.liveSession.game_phase) {
+          // It's probably better to add a formal mutation for this, but for now we rely on the host's Lobby controls.
+        }
+      }
+    }
+  }, [replaceSlideQuery, slides, live])
 
   useEffect(() => {
     onSlideChangedHandlerRef.current = onSlideChanged
@@ -372,15 +461,24 @@ export function DeckRevealPresenter({
     setView((v) => (v === "slide" ? "grid" : "slide"))
   }, [])
 
+  const goToSlide = useCallback(
+    (i: number) => {
+      const max = Math.max(0, numSlides - 1)
+      const clamped = Math.min(Math.max(0, i), max)
+      setActiveIndex(clamped)
+      deckApiRef.current?.slide(clamped, 0)
+      replaceSlideQuery(clamped)
+      liveSlideSyncRef.current?.(clamped)
+    },
+    [numSlides, replaceSlideQuery],
+  )
+
   const onGridPickSlide = useCallback(
     (i: number) => {
-      setActiveIndex(i)
-      deckApiRef.current?.slide(i, 0)
-      replaceSlideQuery(i)
-      liveSlideSyncRef.current?.(i)
+      goToSlide(i)
       setView("slide")
     },
-    [replaceSlideQuery],
+    [goToSlide],
   )
 
   if (numSlides < 1) {
@@ -456,12 +554,14 @@ export function DeckRevealPresenter({
                 </Button>
               ) : (
                 <>
-                  <span
-                    className="max-w-[9rem] truncate rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-xs tabular-nums sm:max-w-[10rem]"
-                    title="Share this code with viewers"
-                  >
-                    {live.joinCode ?? "—"}
-                  </span>
+                  {live.liveSession?.game_phase === "lobby" && (
+                    <span
+                      className="max-w-[9rem] truncate rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-xs tabular-nums sm:max-w-[10rem]"
+                      title="Share this code with viewers"
+                    >
+                      {live.joinCode ?? "—"}
+                    </span>
+                  )}
                   <Button
                     type="button"
                     variant={live.liveSession?.is_lobby_visible ? "default" : "secondary"}
@@ -617,8 +717,7 @@ export function DeckRevealPresenter({
                           live.liveSession,
                           question.questionKey,
                         )
-                        const resultsVisible =
-                          state === "revealed" && live.liveSession.status === "ended"
+                        const resultsVisible = state === "revealed"
                         const counts = resultsVisible
                           ? aggregateQuestionCounts(
                             live.liveSession,
@@ -626,6 +725,91 @@ export function DeckRevealPresenter({
                             question.options.length,
                           )
                           : Array.from({ length: question.options.length }, () => 0)
+
+                        const isBattleRoyale =
+                          live.liveSession.game_phase === "battle_royale"
+                        let activeBattlePhase:
+                          | "target_selection"
+                          | "question_active"
+                          | "results"
+                          | "battle_log"
+                          | "podium"
+                          | undefined
+                        if (isBattleRoyale) {
+                          const battleState = live.liveSession.battle_state
+                          if (!battleState || !battleState.$isLoaded) {
+                            return (
+                              <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+                                <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                                <p className="text-sm text-muted-foreground">
+                                  Loading battle state…
+                                </p>
+                              </div>
+                            )
+                          }
+                          const battlePhase =
+                            battleState.phase ?? "target_selection"
+                          activeBattlePhase = battlePhase
+                          if (battlePhase === "target_selection") {
+                            return (
+                              <BattleRoyaleArena
+                                liveSession={live.liveSession}
+                                onStartQuestion={
+                                  live.onStartQuestion
+                                    ? () =>
+                                        void live.onStartQuestion?.(
+                                          question.questionKey,
+                                        )
+                                    : () => {}
+                                }
+                              />
+                            )
+                          }
+
+                          if (battlePhase === "battle_log") {
+                            return (
+                              <BattleLog
+                                liveSession={live.liveSession}
+                                variant="presenter"
+                                onNextQuestion={
+                                  live.onResetBattleRound
+                                    ? () => {
+                                        const lastBattle =
+                                          findLastBattleQuestionSlideIndex(slides)
+                                        if (
+                                          live.onShowPodium &&
+                                          lastBattle !== null &&
+                                          activeIndex === lastBattle
+                                        ) {
+                                          void live.onShowPodium()
+                                        } else {
+                                          void live.onResetBattleRound?.()
+                                          goNext()
+                                        }
+                                      }
+                                    : undefined
+                                }
+                              />
+                            )
+                          }
+
+                          if (battlePhase === "podium") {
+                            return (
+                              <BattlePodium
+                                liveSession={live.liveSession}
+                                variant="presenter"
+                                onContinue={
+                                  live.onLeaveBattleRoyaleAfterPodium
+                                    ? () => {
+                                        void live.onLeaveBattleRoyaleAfterPodium?.()
+                                        goNext()
+                                      }
+                                    : undefined
+                                }
+                              />
+                            )
+                          }
+                        }
 
                         return (
                           <QuestionSlideCard
@@ -642,13 +826,31 @@ export function DeckRevealPresenter({
                             myAnswer={null}
                             onStart={
                               live.onStartQuestion
-                                ? () => void live.onStartQuestion?.(question.questionKey)
+                                ? () =>
+                                    void live.onStartQuestion?.(
+                                      question.questionKey,
+                                    )
                                 : undefined
                             }
                             onStop={
                               live.onStopQuestion
-                                ? () => void live.onStopQuestion?.(question.questionKey, question.correctOptionIndex)
+                                ? () =>
+                                    void live.onStopQuestion?.(
+                                      question.questionKey,
+                                      question.correctOptionIndex,
+                                    )
                                 : undefined
+                            }
+                            onPresenterNextQuestion={
+                              isBattleRoyale &&
+                              resultsVisible &&
+                              activeBattlePhase === "results" &&
+                              live.onShowBattleLog
+                                ? () => void live.onShowBattleLog?.()
+                                : undefined
+                            }
+                            presenterNextQuestionLabel={
+                              isBattleRoyale ? "Show Battle Log" : "Next question"
                             }
                           />
                         )
@@ -676,52 +878,314 @@ export function DeckRevealPresenter({
 
             {live?.isActive && live.liveSession?.is_lobby_visible ? (
               <div className="absolute inset-0 z-50 flex flex-col bg-background">
-                <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto p-6 md:p-12">
-                  <div className="mb-12 text-center">
-                    <p className="mb-2 text-2xl font-medium tracking-tight text-muted-foreground sm:text-3xl">Go to <span className="text-foreground">playdeck.app</span> and enter code</p>
-                    <h1 className="text-8xl font-black tracking-tighter text-primary sm:text-[10rem]">{live.joinCode || "—"}</h1>
-                  </div>
+                <div className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-auto p-6 pt-12 md:p-12 md:pt-20">
+                  {(() => {
+                    const gamePhase = live.liveSession?.game_phase ?? "lobby"
+                    const formationState = live.liveSession?.team_formation_state ?? "idle"
+                    
+                    if (gamePhase !== "lobby" || formationState !== "idle") return null
+
+                    return (
+                      <div className="mb-8 text-center shrink-0">
+                        <p className="mb-2 text-2xl font-medium tracking-tight text-muted-foreground sm:text-3xl">Go to <span className="text-foreground">play.joshing.us</span> and enter code</p>
+                        <h1 className="text-8xl font-black tracking-tighter text-primary sm:text-[10rem] leading-none">{live.joinCode || "—"}</h1>
+                      </div>
+                    )
+                  })()}
 
                   {(() => {
                     const players = live.liveSession.joined_players && live.liveSession.joined_players.$isLoaded
                       ? Array.from(live.liveSession.joined_players)
                       : []
-                    return (
-                      <div className="w-full max-w-4xl">
-                        <div className="mb-6 flex items-center justify-between">
-                          <h2 className="text-xl font-semibold opacity-90">Players Joined</h2>
-                          <span className="rounded-full bg-primary/20 px-3 py-1 font-mono text-sm font-bold text-primary">
-                            {players.length}
-                          </span>
-                        </div>
 
-                        {players.length === 0 ? (
-                          <div className="flex h-32 items-center justify-center rounded-xl border-2 border-dashed border-muted bg-muted/10">
-                            <p className="animate-pulse text-muted-foreground">Waiting for players to join...</p>
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-3">
-                            {players.map((p, i: number) => {
-                              if (!p || !p.$isLoaded) return null
-                              return (
-                                <div
-                                  key={i}
-                                  className="group relative flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium transition-all hover:pr-10"
+                    const formationState = live.liveSession?.team_formation_state ?? "idle"
+                    const gamePhase = live.liveSession?.game_phase ?? "lobby"
+                    
+                    if (gamePhase === "store") {
+                       const teams = live.liveSession.teams && live.liveSession.teams.$isLoaded 
+                          ? Array.from(live.liveSession.teams).filter(Boolean)
+                          : []
+                          
+                       return (
+                          <div className="w-full max-w-6xl animate-in fade-in zoom-in-95 duration-500">
+                             <div className="mb-8 flex flex-col items-center gap-4 text-center">
+                                <h2 className="text-4xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-600">Powerup Store</h2>
+                                <p className="text-xl font-medium text-muted-foreground">Team Leaders are purchasing supplies for their teams...</p>
+                             </div>
+                             
+                             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                                {teams.map(t => {
+                                   if (!t || !t.$isLoaded) return null
+                                   const teamPowerups = t.powerups && t.powerups.$isLoaded ? Array.from(t.powerups).filter(Boolean) : []
+                                   return (
+                                      <div key={t.id} className={cn("rounded-2xl border-2 p-6 flex flex-col gap-5 shadow-lg bg-card/50 backdrop-blur-sm transition-all hover:scale-[1.02]", t.color)}>
+                                          <div className="flex items-center justify-between">
+                                             <h3 className="text-2xl font-bold">{t.name}</h3>
+                                             <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1.5 rounded-full bg-red-500/20 px-3 py-1 text-sm font-bold text-red-500">
+                                                   ❤️ {t.hp ?? 10}
+                                                </div>
+                                                <div className="flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-sm font-bold text-amber-500">
+                                                   <Star className="h-4 w-4 fill-amber-500" />
+                                                   {t.banked_play_points ?? 0}
+                                                </div>
+                                             </div>
+                                          </div>
+                                          
+                                          <div className="flex-1 bg-background/60 rounded-xl p-4 min-h-[120px]">
+                                             <p className="text-xs font-semibold mb-3 opacity-70 uppercase tracking-wider text-[var(--tw-prose-body)]">Acquired Items</p>
+                                             {teamPowerups.length === 0 ? (
+                                                <p className="text-sm italic opacity-50 text-[var(--tw-prose-body)] flex items-center justify-center h-full">Waiting for leader...</p>
+                                             ) : (
+                                                <div className="flex flex-wrap gap-2">
+                                                   {teamPowerups.map((pu, i) => {
+                                                      if (!pu || !pu.$isLoaded) return null
+                                                      const puName = pu.type.replace("_", " ")
+                                                      const member = players.find(p => p && p.$isLoaded && p.account_id === pu.owner_account_id) as Loaded<typeof SessionPlayer> | undefined
+                                                      return (
+                                                         <div key={i} className="flex items-center gap-1.5 rounded-md border border-border/40 bg-background px-2.5 py-1.5 text-xs font-medium shadow-sm">
+                                                            <span className="capitalize">{puName}</span>
+                                                            <span className="opacity-50 mx-1">→</span>
+                                                            <Users className="h-3 w-3 opacity-70" />
+                                                            <span className="max-w-[80px] truncate">{member ? member.name : "Member"}</span>
+                                                         </div>
+                                                      )
+                                                   })}
+                                                </div>
+                                             )}
+                                          </div>
+                                      </div>
+                                   )
+                                })}
+                             </div>
+                             
+                             <div className="mt-16 flex justify-center">
+                                <Button 
+                                  size="lg" 
+                                  className="h-16 rounded-full px-12 text-2xl font-black uppercase tracking-wider shadow-[0_0_30px_-5px_hsl(var(--primary))] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_50px_-5px_hsl(var(--primary))] bg-primary text-primary-foreground"
+                                  onClick={() => {
+                                     void live.onSetLobbyVisible?.(false)
+                                     void live.onStartGameplay?.()
+                                     const target = findFirstBattleQuestionSlideIndex(slides)
+                                     if (target !== null) goToSlide(target)
+                                  }}
                                 >
-                                  <span>{p.name}</span>
-                                  <button
-                                    onClick={() => void live.onKickPlayer?.(p.account_id)}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-muted p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive hover:text-white group-hover:opacity-100"
-                                    title="Kick Player"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              )
-                            })}
+                                  Begin Battle
+                                </Button>
+                             </div>
                           </div>
-                        )}
-                      </div>
+                       )
+                    }
+
+                    if (formationState === "idle") {
+                      return (
+                        <div className="w-full max-w-4xl">
+                          <div className="mb-6 flex items-center justify-between">
+                            <h2 className="text-xl font-semibold opacity-90">Players Joined</h2>
+                            <span className="rounded-full bg-primary/20 px-3 py-1 font-mono text-sm font-bold text-primary">
+                              {players.length}
+                            </span>
+                          </div>
+  
+                          {players.length === 0 ? (
+                            <div className="flex h-32 items-center justify-center rounded-xl border-2 border-dashed border-muted bg-muted/10">
+                              <p className="animate-pulse text-muted-foreground">Waiting for players to join...</p>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-3">
+                              {players.map((p, i: number) => {
+                                if (!p || !p.$isLoaded) return null
+                                return (
+                                  <div
+                                    key={i}
+                                    className="group relative flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium transition-all hover:pr-10"
+                                  >
+                                    <span>{p.name}</span>
+                                    <button
+                                      onClick={() => void live.onKickPlayer?.(p.account_id)}
+                                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-muted p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive hover:text-white group-hover:opacity-100"
+                                      title="Kick Player"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+
+                          {players.length > 0 && (
+                             <div className="mt-12 flex justify-center">
+                               <Button size="lg" onClick={() => void live.onStartTeamFormation?.(2)}>
+                                 Divide into Teams
+                               </Button>
+                             </div>
+                          )}
+                        </div>
+                      )
+                    }
+
+                    const teams = live.liveSession.teams && live.liveSession.teams.$isLoaded 
+                       ? Array.from(live.liveSession.teams).filter(Boolean)
+                       : []
+                    
+                    const unassignedPlayers = players.filter((p): p is Loaded<typeof SessionPlayer> => !!p && p.$isLoaded && !p.team_id)
+                    const assignedCount = players.length - unassignedPlayers.length
+
+                    return (
+                        <div className="w-full max-w-5xl">
+                           <div className="mb-8 flex flex-col gap-6">
+                             <div className="flex items-center justify-between">
+                               <div className="flex items-center gap-4">
+                                 <h2 className="text-2xl font-bold">Team Builder</h2>
+                                 {formationState === "setup" && (
+                                    <div className="flex gap-2">
+                                       {[2, 4, 6].map(num => (
+                                          <Button 
+                                             key={num} 
+                                             variant={teams.length === num ? "default" : "outline"}
+                                             size="sm"
+                                             onClick={() => void live.onStartTeamFormation?.(num)}
+                                           >
+                                             {num} Teams
+                                           </Button>
+                                       ))}
+                                    </div>
+                                 )}
+                               </div>
+                               <div className="flex items-center gap-3">
+                                 {formationState === "setup" && (
+                                    <Button size="lg" variant="secondary" onClick={() => void live.onOpenTeamJoining?.()}>
+                                      Lock & Open for Joining
+                                    </Button>
+                                 )}
+                                 <div className="group relative inline-flex">
+                                   {assignedCount === 0 && (
+                                     <div className="absolute inset-0 z-10" />
+                                   )}
+                                   <Button 
+                                     size="lg" 
+                                     disabled={assignedCount === 0}
+                                     onClick={() => void live.onStartGameStore?.()}
+                                   >
+                                     Start Game
+                                   </Button>
+                                   {assignedCount === 0 && (
+                                     <div className="pointer-events-none absolute -top-12 left-1/2 -z-0 -translate-x-1/2 whitespace-nowrap rounded-lg bg-popover px-4 py-2 text-sm font-medium text-popover-foreground opacity-0 shadow-lg ring-1 ring-border transition-all duration-200 group-hover:-top-14 group-hover:opacity-100">
+                                       Waiting for players to join teams...
+                                       <div className="absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 rounded-sm bg-popover ring-1 ring-border" style={{ clipPath: 'polygon(100% 100%, 0 100%, 100% 0)' }} />
+                                     </div>
+                                   )}
+                                 </div>
+                               </div>
+                             </div>
+
+                             {formationState === "open" && (
+                                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 shadow-inner">
+                                   <div className="mb-4 flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                         <h3 className="text-lg font-semibold text-amber-500">Unassigned Pool</h3>
+                                         <span className="relative flex h-3 w-3">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                                         </span>
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                         <span className="font-mono text-base font-bold text-amber-500">
+                                            {assignedCount}/{players.length} Assigned
+                                         </span>
+                                         {unassignedPlayers.length > 0 && (
+                                            <Button 
+                                              variant="outline" 
+                                              size="sm" 
+                                              onClick={() => void live.onAutoAssignTeams?.()}
+                                              className="border-amber-500/50 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400"
+                                            >
+                                              Balance Teams
+                                            </Button>
+                                         )}
+                                      </div>
+                                   </div>
+                                   
+                                   <div className="flex flex-wrap gap-2">
+                                      {unassignedPlayers.length === 0 ? (
+                                         <div className="w-full rounded-lg border border-dashed border-emerald-500/30 bg-emerald-500/10 py-4 text-center text-emerald-500">
+                                            <p className="font-medium flex items-center justify-center gap-2">
+                                               All players have chosen a team!
+                                            </p>
+                                         </div>
+                                      ) : (
+                                         unassignedPlayers.map(p => (
+                                            <span key={p.account_id} className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-background/80 px-3 py-1.5 text-sm font-medium text-foreground shadow-sm">
+                                               <Users className="h-4 w-4 text-muted-foreground" />
+                                               {p.name}
+                                            </span>
+                                         ))
+                                      )}
+                                   </div>
+                                </div>
+                             )}
+                           </div>
+                           
+                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                              {teams.map(t => {
+                                 if (!t || !t.$isLoaded) return null
+                                 const teamPlayers = players.filter((p): p is Loaded<typeof SessionPlayer> => !!p && p.$isLoaded && p.team_id === t.id)
+                                 const leader = teamPlayers.find(p => p && p.$isLoaded && p.account_id === t.leader_account_id) as Loaded<typeof SessionPlayer> | undefined
+                                 return (
+                                     <div key={t.id} className={cn("rounded-xl border-2 p-5 flex flex-col gap-4 shadow-sm", t.color)}>
+                                        <div className="flex items-center justify-between">
+                                           <h3 className="text-xl font-bold">{t.name}</h3>
+                                           <span className="font-mono font-bold bg-background/50 px-2.5 py-1 rounded-full text-sm">
+                                             {teamPlayers.length} members
+                                           </span>
+                                        </div>
+                                        
+                                        {formationState === "setup" ? (
+                                           <div className="bg-background/80 p-3 rounded-lg border border-border/50">
+                                              <p className="text-xs font-semibold mb-2 opacity-70 uppercase tracking-wider text-[var(--tw-prose-body)]">Assign Leader</p>
+                                              <select 
+                                                 className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                                                 value={t.leader_account_id || ""}
+                                                 onChange={(e) => void live.onAssignTeamLeader?.(t.id, e.target.value || undefined)}
+                                              >
+                                                <option value="">-- Choose a leader --</option>
+                                                {players.map(player => {
+                                                   if (!player || !player.$isLoaded) return null
+                                                   const p = player as Loaded<typeof SessionPlayer>
+                                                   return (
+                                                      <option key={p.account_id} value={p.account_id}>{p.name}</option>
+                                                   )
+                                                })}
+                                              </select>
+                                           </div>
+                                        ) : (
+                                           <div className="bg-background/80 p-3 rounded-lg border border-border/50">
+                                              <p className="text-xs font-semibold mb-2 opacity-70 uppercase tracking-wider text-[var(--tw-prose-body)]">Leader</p>
+                                              <div className="font-medium text-sm flex items-center gap-2">
+                                                <Star className="h-4 w-4 fill-amber-500 text-amber-500" /> 
+                                                <span className="text-foreground">{leader ? leader.name : "None assigned"}</span>
+                                              </div>
+                                           </div>
+                                        )}
+                                        
+                                        <div className="flex-1 mt-2">
+                                           <p className="text-xs font-semibold mb-2 opacity-70 uppercase tracking-wider text-[var(--tw-prose-body)]">Roster</p>
+                                           <div className="flex flex-wrap gap-2">
+                                              {teamPlayers.filter(p => !leader || (p && p.$isLoaded && p.account_id !== leader.account_id)).map(p => {
+                                                 if (!p || !p.$isLoaded) return null
+                                                 return <span key={p.account_id} className="text-sm bg-background/80 text-foreground px-2 py-1 rounded-md border border-border/40">{p.name}</span>
+                                              })}
+                                              {teamPlayers.length === 0 && <span className="text-sm italic opacity-50 text-[var(--tw-prose-body)]">Empty</span>}
+                                              {teamPlayers.length === 1 && leader && <span className="text-sm italic opacity-50 text-[var(--tw-prose-body)]">No regular members yet</span>}
+                                           </div>
+                                        </div>
+                                     </div>
+                                 )
+                              })}
+                           </div>
+
+                        </div>
                     )
                   })()}
 

@@ -8,9 +8,9 @@ import { useAccount } from "jazz-tools/react"
 
 import Reveal from "reveal.js"
 import type { RevealApi } from "reveal.js"
-import { buttonVariants, cn } from "@beyond/design-system"
+import { Button, buttonVariants, cn } from "@beyond/design-system"
 import Link from "next/link"
-import { Star } from "lucide-react"
+import { Star, CheckCircle2, Users, LogOut, Loader2, ShoppingBag, Package } from "lucide-react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
@@ -24,12 +24,23 @@ import {
   submitQuestionAnswer,
   upsertPollVote,
   joinLiveSession,
+  joinTeam,
+  leaveTeam,
+  purchasePowerup,
 } from "@/features/jazz/live-session-mutations"
-import { PlaydeckAccount, type LiveSession } from "@/features/jazz/schema"
+import { PlaydeckAccount, type LiveSession, type SessionPlayer, type Team, type PowerupType, type Powerup } from "@/features/jazz/schema"
+import type { z } from "jazz-tools"
 import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { BattleLog } from "@/features/slides/battle-log"
+import { BattlePodium } from "@/features/slides/battle-podium"
+import { getQuarterStrikeHiddenCanonicalIndex } from "@/features/slides/battle-powerup-helpers"
+import { BattleRoyaleAudience } from "@/features/slides/battle-royale-audience"
+import { InventoryOverlayWindow } from "@/features/slides/inventory-overlay-window"
+import { ShopOverlayWindow, PowerupStoreCatalog } from "@/features/slides/shop-overlay-window"
+import { formatPowerupLabel } from "@/features/slides/powerup-meta"
 
 import "reveal.js/reveal.css"
 import "reveal.js/theme/black.css"
@@ -108,6 +119,7 @@ export function LiveRevealFollower({
   }, [me, liveSession])
 
   let playPoints = 0
+  let myPlayerRecord: Loaded<typeof SessionPlayer> | null = null
   if (me.$isLoaded && liveSession && liveSession.joined_players) {
     const players = liveSession.joined_players
     if (players.$isLoaded) {
@@ -117,11 +129,76 @@ export function LiveRevealFollower({
           assertLoaded(p)
           if (p.account_id === userId) {
             playPoints = p.play_points ?? 0
+            myPlayerRecord = p
             break
           }
         }
       }
     }
+  }
+
+  const formationState = liveSession?.team_formation_state ?? "idle"
+  const gamePhase = liveSession?.game_phase ?? "lobby"
+  const teams = liveSession?.teams && liveSession.teams.$isLoaded 
+    ? Array.from(liveSession.teams).filter(Boolean) as Loaded<typeof Team>[]
+    : []
+
+  const myTeam = myPlayerRecord?.team_id
+    ? teams.find((t) => t.id === myPlayerRecord.team_id)
+    : undefined
+  const teamPowerups =
+    myTeam?.powerups && myTeam.powerups.$isLoaded
+      ? Array.from(myTeam.powerups).filter((pu): pu is Loaded<typeof Powerup> => !!(pu && pu.$isLoaded))
+      : []
+  const myPowerups = teamPowerups.filter(
+    (pu) => pu.owner_account_id === userId && !pu.is_used,
+  )
+  const isTeamLeader = Boolean(myTeam && myTeam.leader_account_id === userId)
+
+  const [shopOpen, setShopOpen] = useState(false)
+  const [inventoryOpen, setInventoryOpen] = useState(false)
+
+  const [teamError, setTeamError] = useState<string | null>(null)
+  const [teamPending, startTeamJoin] = useTransition()
+
+  const handleJoinTeam = (teamId: string) => {
+    setTeamError(null)
+    startTeamJoin(() => {
+       if (!me.$isLoaded) {
+         setTeamError("Connecting...")
+         return
+       }
+       assertLoaded(me)
+       const res = joinTeam(me, liveSession, teamId)
+       if (!res.ok) setTeamError(res.error)
+    })
+  }
+
+  const handleLeaveTeam = () => {
+    setTeamError(null)
+    startTeamJoin(() => {
+       if (!me.$isLoaded) {
+         setTeamError("Connecting...")
+         return
+       }
+       assertLoaded(me)
+       const res = leaveTeam(me, liveSession)
+       if (!res.ok) setTeamError(res.error)
+    })
+  }
+
+  const [buyError, setBuyError] = useState<string | null>(null)
+  const [buyPending, startBuy] = useTransition()
+
+  const handleBuyPowerup = (type: z.infer<typeof PowerupType>, cost: number) => {
+    setBuyError(null)
+    startBuy(() => {
+       if (!me.$isLoaded) return
+       assertLoaded(me)
+       if (!myPlayerRecord?.team_id) return
+       const res = purchasePowerup(me, liveSession, myPlayerRecord.team_id, type, cost)
+       if (!res.ok) setBuyError(res.error)
+    })
   }
 
   useEffect(() => {
@@ -240,13 +317,67 @@ export function LiveRevealFollower({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{deckTitle}</p>
         </div>
-        <div className="flex shrink-0 items-center justify-end">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              onClick={() => setShopOpen(true)}
+            >
+              <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
+              Shop
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              onClick={() => setInventoryOpen(true)}
+            >
+              <Package className="h-3.5 w-3.5" aria-hidden />
+              Inventory
+            </Button>
+          </div>
+          {myPlayerRecord?.team_id && formationState !== "idle" ? (
+             <div className="mr-3 flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                <Users className="h-3.5 w-3.5" />
+                <span className="tabular-nums block pt-px">
+                   Team: {teams.find(t => t?.id === myPlayerRecord?.team_id)?.name ?? "Unknown"}
+                </span>
+             </div>
+          ) : null}
           <div className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
             <Star className="h-3.5 w-3.5 fill-amber-500/50" />
             <span className="tabular-nums block pt-px">{playPoints} PlayPoints</span>
           </div>
         </div>
       </header>
+
+      <ShopOverlayWindow
+        open={shopOpen}
+        onOpenChange={setShopOpen}
+        gamePhase={gamePhase}
+        hasTeam={Boolean(myPlayerRecord?.team_id)}
+        myPlayPoints={playPoints}
+        myTeam={myTeam}
+        teamPowerups={teamPowerups}
+        liveSession={liveSession}
+        buyError={buyError}
+        buyPending={buyPending}
+        onBuy={handleBuyPowerup}
+      />
+      <InventoryOverlayWindow
+        open={inventoryOpen}
+        onOpenChange={setInventoryOpen}
+        userId={userId}
+        hasTeam={Boolean(myPlayerRecord?.team_id)}
+        myPowerups={myPowerups}
+        teamPowerups={teamPowerups}
+        liveSession={liveSession}
+        teamName={myTeam?.name}
+      />
 
       <div className="relative min-h-0 flex-1">
         {loadError ? (
@@ -280,6 +411,127 @@ export function LiveRevealFollower({
                 </div>
               </div>
             </div>
+
+            {(() => {
+               const gamePhase = liveSession.game_phase ?? "lobby"
+               
+               if (gamePhase === "playing" && myPlayerRecord?.team_id) {
+                  return (
+                     <div className="absolute top-4 left-4 z-40 flex flex-col gap-2 pointer-events-none">
+                        <div className="flex items-center gap-2 rounded-full border border-border/40 bg-background/80 px-3 py-1.5 shadow-sm backdrop-blur-md">
+                           <span className="text-red-500 font-bold flex items-center gap-1.5"><Star className="h-4 w-4 fill-amber-500 text-amber-500 hidden" /> ❤️ {myTeam?.hp ?? 10}</span>
+                           <div className="w-px h-3 bg-border" />
+                           <span className="flex items-center gap-1 text-sm font-semibold opacity-80">{myTeam?.name}</span>
+                        </div>
+                        {myPowerups.length > 0 && (
+                           <div className="flex flex-col gap-1.5 pointer-events-auto">
+                              {myPowerups.map((pu, i) => {
+                                 if(!pu) return null
+                                 const puName = formatPowerupLabel(pu.type)
+                                 return (
+                                    <button key={i} className="flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm backdrop-blur-md transition-all hover:bg-primary/20 hover:scale-105 active:scale-95">
+                                       <Star className="h-3 w-3 fill-current" />
+                                       <span className="capitalize">{puName}</span>
+                                    </button>
+                                 )
+                              })}
+                           </div>
+                        )}
+                     </div>
+                  )
+               }
+               
+               if (gamePhase === "store" && myPlayerRecord?.team_id) {
+                  return (
+                     <div className="absolute inset-0 z-50 flex flex-col overflow-auto bg-background p-4 md:p-8 duration-500 animate-in fade-in zoom-in-95" role="presentation">
+                        <PowerupStoreCatalog
+                           variant="fullscreen"
+                           canPurchase
+                           readOnlyNotice={null}
+                           myPlayPoints={playPoints}
+                           teamPowerups={teamPowerups}
+                           liveSession={liveSession}
+                           buyError={buyError}
+                           buyPending={buyPending}
+                           onBuy={handleBuyPowerup}
+                        />
+                     </div>
+                  )
+               }
+               
+               return null
+            })()}
+
+            {formationState === "open" && gamePhase !== "battle_royale" ? (
+               <div className="absolute inset-0 z-20 flex flex-col bg-background/95 backdrop-blur-sm p-6 overflow-auto" role="presentation">
+                  <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
+                     {myPlayerRecord?.team_id ? (
+                        <div className="text-center flex flex-col items-center animate-in fade-in zoom-in duration-500">
+                           <div className="h-20 w-20 rounded-full bg-primary/20 flex items-center justify-center mb-6">
+                              <CheckCircle2 className="h-10 w-10 text-primary" />
+                           </div>
+                           <h2 className="text-3xl font-black tracking-tight mb-2">You&apos;re in!</h2>
+                           <p className="text-muted-foreground">Waiting for the presenter to start the game.</p>
+                           {(() => {
+                              if (isTeamLeader) {
+                                  return (
+                                     <div className="mt-8 flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-sm font-semibold text-amber-500">
+                                        <Star className="h-4 w-4 fill-amber-500/50" />
+                                        Team Leader
+                                     </div>
+                                  )
+                              }
+                              
+                              return (
+                                 <button
+                                    onClick={handleLeaveTeam}
+                                    disabled={teamPending}
+                                    className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors duration-300 rounded-full px-5")}
+                                 >
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    Leave Team
+                                 </button>
+                              )
+                           })()}
+                           {teamError && <p className="text-destructive text-sm font-medium mt-3 bg-destructive/10 p-2 rounded-md">{teamError}</p>}
+                        </div>
+                     ) : (
+                        <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                           <div className="text-center">
+                              <h2 className="text-3xl font-black tracking-tight">Choose Your Team</h2>
+                              <p className="opacity-70 mt-1">Join a team to compete in the Battle Royale.</p>
+                              {teamError && <p className="text-destructive text-sm font-medium mt-3 bg-destructive/10 p-2 rounded-md">{teamError}</p>}
+                           </div>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {teams.map(t => {
+                                 const leader = liveSession.joined_players && liveSession.joined_players.$isLoaded
+                                    ? Array.from(liveSession.joined_players).find(p => p && p.$isLoaded && p.account_id === t.leader_account_id) as Loaded<typeof SessionPlayer> | undefined
+                                    : null
+                                 return (
+                                    <button
+                                       key={t.id}
+                                       onClick={() => handleJoinTeam(t.id)}
+                                       disabled={teamPending}
+                                       className={cn(
+                                          "relative flex flex-col items-start gap-1 rounded-xl border-2 p-5 text-left transition-all hover:-translate-y-1 hover:shadow-lg active:scale-95 disabled:pointer-events-none disabled:opacity-50",
+                                          t.color,
+                                          "bg-background/80 hover:bg-background"
+                                       )}
+                                    >
+                                       <h3 className="text-xl font-bold">{t.name}</h3>
+                                       <div className="mt-2 flex items-center gap-1.5 text-sm font-medium opacity-80">
+                                          <Star className="h-3.5 w-3.5 fill-current" />
+                                          {leader ? leader.name : "No Leader"}
+                                       </div>
+                                    </button>
+                                 )
+                              })}
+                           </div>
+                        </div>
+                     )}
+                  </div>
+               </div>
+            ) : null}
 
             {slides[revealIndex]?.interactiveError ? (
               <div
@@ -359,15 +611,137 @@ export function LiveRevealFollower({
                   {(() => {
                     const question = slides[revealIndex].question!
                     const state = questionStatus(liveSession, question.questionKey)
-                    const resultsVisible =
-                      state === "revealed" && liveSession.status === "ended"
-                    const counts = resultsVisible
+                    const counts = state === "revealed"
                       ? aggregateQuestionCounts(
-                        liveSession,
-                        question.questionKey,
-                        question.options.length,
-                      )
+                          liveSession,
+                          question.questionKey,
+                          question.options.length,
+                        )
                       : Array.from({ length: question.options.length }, () => 0)
+
+                    if (liveSession.game_phase === "battle_royale") {
+                      const battleState = liveSession.battle_state
+                      if (!battleState || !battleState.$isLoaded) {
+                        return (
+                          <div className="flex h-full flex-col items-center justify-center gap-3 bg-background p-6">
+                            <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground">
+                              Loading battle state…
+                            </p>
+                          </div>
+                        )
+                      }
+                      const phase = battleState.phase ?? "target_selection"
+
+                      if (phase === "target_selection") {
+                        if (!me.$isLoaded) {
+                          return (
+                            <div className="flex h-full items-center justify-center bg-background p-6 text-center text-foreground">
+                              <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-muted-foreground" />
+                              Loading account…
+                            </div>
+                          )
+                        }
+                        return (
+                          <BattleRoyaleAudience
+                            liveSession={liveSession}
+                            me={me as Loaded<typeof PlaydeckAccount>}
+                            myPlayerRecord={myPlayerRecord}
+                            teams={teams}
+                          />
+                        )
+                      }
+
+                      if (phase === "battle_log") {
+                        return (
+                          <BattleLog liveSession={liveSession} variant="audience" />
+                        )
+                      }
+
+                      if (phase === "podium") {
+                        return (
+                          <BattlePodium liveSession={liveSession} variant="audience" />
+                        )
+                      }
+
+                      const isLeader = myPlayerRecord?.team_id
+                        ? teams.find(
+                            (t) => t.id === myPlayerRecord.team_id,
+                          )?.leader_account_id === myPlayerRecord.account_id
+                        : false
+
+                      const sharedMcq = (
+                        <QuestionSlideCard
+                          layout="overlay"
+                          block={question}
+                          variant="audience"
+                          state={state}
+                          resultsVisible={state === "revealed"}
+                          counts={counts}
+                          answeredCount={countQuestionAnswers(
+                            liveSession,
+                            question.questionKey,
+                          )}
+                          myAnswer={myQuestionAnswer(
+                            liveSession,
+                            userId,
+                            question.questionKey,
+                          )}
+                          audienceAccountId={userId}
+                          audienceHideCanonicalOptionIndex={getQuarterStrikeHiddenCanonicalIndex(
+                            liveSession,
+                            userId,
+                            myPlayerRecord?.team_id,
+                            question.options,
+                          )}
+                          submitError={questionError}
+                          submitPending={questionPending}
+                          accountReady={me.$isLoaded}
+                          onSubmit={(optionIndex) => {
+                            setQuestionErrorState({
+                              questionKey: question.questionKey,
+                              message: null,
+                            })
+                            startQuestionSubmit(() => {
+                              if (!me.$isLoaded) {
+                                setQuestionErrorState({
+                                  questionKey: question.questionKey,
+                                  message: "Connecting...",
+                                })
+                                return
+                              }
+                              assertLoaded(me)
+                              const result = submitQuestionAnswer(me, liveSession, {
+                                questionKey: question.questionKey,
+                                optionIndex,
+                                optionCount: question.options.length,
+                              })
+                              if (!result.ok) {
+                                setQuestionErrorState({
+                                  questionKey: question.questionKey,
+                                  message: result.error,
+                                })
+                              }
+                            })
+                          }}
+                        />
+                      )
+
+                      if (phase === "question_active") {
+                        return (
+                          <div className="flex h-full flex-col">
+                            <div className="border-b border-red-500/30 bg-red-600/20 px-4 py-2 text-center text-sm font-semibold text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+                              {isLeader
+                                ? "You are the Team Leader! Choose your attack carefully."
+                                : "Help your Team Leader decide the correct answer!"}
+                            </div>
+                            <div className="relative flex-1">{sharedMcq}</div>
+                          </div>
+                        )
+                      }
+
+                      return sharedMcq
+                    }
 
                     return (
                       <QuestionSlideCard
@@ -375,32 +749,19 @@ export function LiveRevealFollower({
                         block={question}
                         variant="audience"
                         state={state}
-                        resultsVisible={resultsVisible}
+                        resultsVisible={state === "revealed"}
                         counts={counts}
-                        answeredCount={countQuestionAnswers(
-                          liveSession,
-                          question.questionKey,
-                        )}
-                        myAnswer={myQuestionAnswer(
-                          liveSession,
-                          userId,
-                          question.questionKey,
-                        )}
+                        answeredCount={countQuestionAnswers(liveSession, question.questionKey)}
+                        myAnswer={myQuestionAnswer(liveSession, userId, question.questionKey)}
                         audienceAccountId={userId}
                         submitError={questionError}
                         submitPending={questionPending}
                         accountReady={me.$isLoaded}
                         onSubmit={(optionIndex) => {
-                          setQuestionErrorState({
-                            questionKey: question.questionKey,
-                            message: null,
-                          })
+                          setQuestionErrorState({ questionKey: question.questionKey, message: null })
                           startQuestionSubmit(() => {
                             if (!me.$isLoaded) {
-                              setQuestionErrorState({
-                                questionKey: question.questionKey,
-                                message: "Still connecting. Try again in a moment.",
-                              })
+                              setQuestionErrorState({ questionKey: question.questionKey, message: "Connecting..." })
                               return
                             }
                             assertLoaded(me)
@@ -410,10 +771,7 @@ export function LiveRevealFollower({
                               optionCount: question.options.length,
                             })
                             if (!result.ok) {
-                              setQuestionErrorState({
-                                questionKey: question.questionKey,
-                                message: result.error,
-                              })
+                              setQuestionErrorState({ questionKey: question.questionKey, message: result.error })
                             }
                           })
                         }}

@@ -44,6 +44,10 @@ function JoinLiveSessionView({
       closed_poll_keys: true,
       question_submissions: { $each: true },
       question_states: { $each: true },
+      teams: { $each: true },
+      battle_state: {
+        round_summary: { entries: { $each: true } },
+      },
     },
   })
 

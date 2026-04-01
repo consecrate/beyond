@@ -257,12 +257,17 @@ type QuestionSlideCardProps = {
   answeredCount: number
   myAnswer: number | null
   audienceAccountId?: string
+  /** When set, that option is omitted from the audience answer grid (e.g. 1/4 power-up). */
+  audienceHideCanonicalOptionIndex?: number | null
   onSubmit?: (canonicalIndex: number) => void
   submitPending?: boolean
   submitError?: string | null
   accountReady?: boolean
   onStart?: () => void
   onStop?: () => void
+  /** Presenter overlay only: CTA after reveal to advance (e.g. battle royale next round). */
+  onPresenterNextQuestion?: () => void
+  presenterNextQuestionLabel?: string
 }
 
 function QuestionSlideCardWithJazz(props: QuestionSlideCardProps) {
@@ -283,12 +288,15 @@ function QuestionSlideCardContent({
   answeredCount,
   myAnswer,
   audienceAccountId,
+  audienceHideCanonicalOptionIndex,
   onSubmit,
   submitPending,
   submitError,
   accountReady = true,
   onStart,
   onStop,
+  onPresenterNextQuestion,
+  presenterNextQuestionLabel = "Next question",
   me,
 }: QuestionSlideCardProps & {
   me: Loaded<typeof PlaydeckAccount> | null
@@ -314,6 +322,18 @@ function QuestionSlideCardContent({
   )
   useJazzImages(articleRef, me, questionMarkdownKey)
 
+  const audienceAnswerRows = useMemo(() => {
+    if (
+      audienceHideCanonicalOptionIndex == null ||
+      audienceHideCanonicalOptionIndex < 0
+    ) {
+      return orderedRows
+    }
+    return orderedRows.filter(
+      (row) => row.canonicalIndex !== audienceHideCanonicalOptionIndex,
+    )
+  }, [audienceHideCanonicalOptionIndex, orderedRows])
+
   const showPreview = variant === "preview"
   const showIdle = variant !== "preview" && state === "idle"
   const showAudienceSelection =
@@ -323,13 +343,9 @@ function QuestionSlideCardContent({
   const showResults = resultsVisible ?? state === "revealed"
   const showPresenterQuestion =
     variant === "presenter" && (state === "idle" || state === "open")
-  const showPresenterClosedAwaitingSessionEnd =
-    variant === "presenter" && state === "revealed" && !showResults
   const showPresenterOpen = variant === "presenter" && state === "open"
-  const showAudienceAwaitingSessionEnd =
-    variant === "audience" && state === "revealed" && !showResults
   const hideOptionRowsUntilReveal =
-    overlay && variant === "presenter" && state === "revealed" && !showResults
+    overlay && variant === "presenter" && !showResults
   const totalAnswers = counts.reduce((sum, count) => sum + count, 0)
   const myRow = orderedRows.find((row) => row.canonicalIndex === myAnswer) ?? null
   const correctRow = orderedRows.find((row) => row.isCorrect) ?? null
@@ -340,7 +356,7 @@ function QuestionSlideCardContent({
     Boolean(onSubmit) && accountReady && !submitPending
 
   if (audienceTheater) {
-    const gridCols = audienceGridColsClass(orderedRows.length)
+    const gridCols = audienceGridColsClass(audienceAnswerRows.length)
     const submitDisabled = !canSubmit
 
     return (
@@ -385,10 +401,10 @@ function QuestionSlideCardContent({
                 gridCols,
               )}
             >
-              {orderedRows.map((row, displayIndex) => {
+              {audienceAnswerRows.map((row, displayIndex) => {
                 const tileClass = audienceOptionTileClass()
                 const spanThird =
-                  orderedRows.length === 3 && displayIndex === 2 ? "col-span-2" : ""
+                  audienceAnswerRows.length === 3 && displayIndex === 2 ? "col-span-2" : ""
                 return (
                   <button
                     key={row.canonicalIndex}
@@ -426,15 +442,6 @@ function QuestionSlideCardContent({
             hasAnswered={revealedHasAnswer}
             correctRow={correctRow}
           />
-        ) : null}
-
-        {showAudienceAwaitingSessionEnd ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-            <p className="text-2xl font-bold text-foreground">Question closed</p>
-            <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
-              Results stay hidden until the live session ends.
-            </p>
-          </div>
         ) : null}
 
         {submitError ? (
@@ -509,7 +516,7 @@ function QuestionSlideCardContent({
         ) : null}
       </div>
 
-      {showPreview || showResults || showPresenterQuestion || showPresenterClosedAwaitingSessionEnd ? (
+      {showPreview || showResults || showPresenterQuestion ? (
         <div className="space-y-3">
           <div
             className={cn(
@@ -613,17 +620,6 @@ function QuestionSlideCardContent({
         </p>
       ) : null}
 
-      {showPresenterClosedAwaitingSessionEnd ? (
-        <p
-          className={cn(
-            "text-muted-foreground",
-            overlay ? "text-center text-xs" : "mb-2 text-xs",
-          )}
-        >
-          Question is closed. Results stay hidden until the live session ends.
-        </p>
-      ) : null}
-
       {variant === "preview" ? (
         <p
           className={cn(
@@ -643,6 +639,28 @@ function QuestionSlideCardContent({
           )}
         >
           <span>{formatAnsweredCount(answeredCount)}</span>
+        </div>
+      ) : null}
+
+      {variant === "presenter" &&
+      overlay &&
+      showResults &&
+      onPresenterNextQuestion ? (
+        <div
+          className={cn(
+            "mt-6 flex w-full",
+            overlay ? "justify-center" : "",
+          )}
+        >
+          <Button
+            type="button"
+            variant="default"
+            size="lg"
+            className={cn(overlay && "rounded-none px-8")}
+            onClick={onPresenterNextQuestion}
+          >
+            {presenterNextQuestionLabel}
+          </Button>
         </div>
       ) : null}
 

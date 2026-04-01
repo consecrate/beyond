@@ -17,7 +17,10 @@ import { replaceSlidesFromMarkdown } from "@/features/decks/jazz-deck-mutations"
 import type { DeckSlideView } from "@/features/decks/deck-types"
 import { uploadImageToSupabase } from "@/features/decks/supabase-image-upload"
 import { appendPollSlideMarkdown } from "@/features/decks/parse-slide-poll"
-import { appendQuestionSlideMarkdown } from "@/features/decks/parse-slide-question"
+import {
+  appendQuestionSlideMarkdown,
+  appendBattleRoyaleMarkdown,
+} from "@/features/decks/parse-slide-question"
 import type { ImageUploadFn } from "@/features/decks/codemirror-image-paste"
 import { hasPendingImageUpload } from "@/features/decks/codemirror-image-paste"
 import {
@@ -290,6 +293,14 @@ export function DeckEditorWorkspace({
             onClick={() => setMarkdown((m) => appendPollSlideMarkdown(m))}
           >
             New Poll
+          </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={() => setMarkdown((m) => appendBattleRoyaleMarkdown(m))}
+          >
+            Add Battle Royale
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={addSlide}>
             Add slide

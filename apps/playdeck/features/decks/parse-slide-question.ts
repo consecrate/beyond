@@ -50,6 +50,39 @@ export function appendQuestionSlideMarkdown(existing: string): string {
   return `${t}\n---\n\n${DEFAULT_QUESTION_SLIDE_CHUNK}`
 }
 
+export const DEFAULT_BATTLE_ROYALE_SLIDES = `# Battle Royale
+
+---
+# Question
+? What React hook triggers a side effect?
+1. useEffect {correct}
+2. useState
+3. useMemo
+4. useCallback
+
+---
+# Question
+? Which HTML tag is used to define an internal style sheet?
+1. <style> {correct}
+2. <css>
+3. <script>
+4. <link>
+
+---
+# Question
+? What does CSS stand for?
+1. Cascading Style Sheets {correct}
+2. Colorful Style Sheets
+3. Computer Style Sheets
+4. Creative Style Sheets
+`
+
+export function appendBattleRoyaleMarkdown(existing: string): string {
+  const t = existing.trimEnd()
+  if (!t) return DEFAULT_BATTLE_ROYALE_SLIDES
+  return `${t}\n---\n\n${DEFAULT_BATTLE_ROYALE_SLIDES}`
+}
+
 /** Deterministic short id from question identity fields (browser-safe). */
 export function computeQuestionKey(parts: {
   title?: string
