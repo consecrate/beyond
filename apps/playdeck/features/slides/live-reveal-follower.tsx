@@ -8,9 +8,9 @@ import { useAccount } from "jazz-tools/react"
 
 import Reveal from "reveal.js"
 import type { RevealApi } from "reveal.js"
-import { buttonVariants, cn } from "@beyond/design-system"
+import { Button, buttonVariants, cn } from "@beyond/design-system"
 import Link from "next/link"
-import { Star, CheckCircle2, Users, LogOut } from "lucide-react"
+import { Star, CheckCircle2, Users, LogOut, Loader2, ShoppingBag, Package } from "lucide-react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
@@ -34,6 +34,13 @@ import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { BattleLog } from "@/features/slides/battle-log"
+import { BattlePodium } from "@/features/slides/battle-podium"
+import { getQuarterStrikeHiddenCanonicalIndex } from "@/features/slides/battle-powerup-helpers"
+import { BattleRoyaleAudience } from "@/features/slides/battle-royale-audience"
+import { InventoryOverlayWindow } from "@/features/slides/inventory-overlay-window"
+import { ShopOverlayWindow, PowerupStoreCatalog } from "@/features/slides/shop-overlay-window"
+import { formatPowerupLabel } from "@/features/slides/powerup-meta"
 
 import "reveal.js/reveal.css"
 import "reveal.js/theme/black.css"
@@ -131,9 +138,25 @@ export function LiveRevealFollower({
   }
 
   const formationState = liveSession?.team_formation_state ?? "idle"
+  const gamePhase = liveSession?.game_phase ?? "lobby"
   const teams = liveSession?.teams && liveSession.teams.$isLoaded 
     ? Array.from(liveSession.teams).filter(Boolean) as Loaded<typeof Team>[]
     : []
+
+  const myTeam = myPlayerRecord?.team_id
+    ? teams.find((t) => t.id === myPlayerRecord.team_id)
+    : undefined
+  const teamPowerups =
+    myTeam?.powerups && myTeam.powerups.$isLoaded
+      ? Array.from(myTeam.powerups).filter((pu): pu is Loaded<typeof Powerup> => !!(pu && pu.$isLoaded))
+      : []
+  const myPowerups = teamPowerups.filter(
+    (pu) => pu.owner_account_id === userId && !pu.is_used,
+  )
+  const isTeamLeader = Boolean(myTeam && myTeam.leader_account_id === userId)
+
+  const [shopOpen, setShopOpen] = useState(false)
+  const [inventoryOpen, setInventoryOpen] = useState(false)
 
   const [teamError, setTeamError] = useState<string | null>(null)
   const [teamPending, startTeamJoin] = useTransition()
@@ -294,7 +317,29 @@ export function LiveRevealFollower({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{deckTitle}</p>
         </div>
-        <div className="flex shrink-0 items-center justify-end">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              onClick={() => setShopOpen(true)}
+            >
+              <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
+              Shop
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              onClick={() => setInventoryOpen(true)}
+            >
+              <Package className="h-3.5 w-3.5" aria-hidden />
+              Inventory
+            </Button>
+          </div>
           {myPlayerRecord?.team_id && formationState !== "idle" ? (
              <div className="mr-3 flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
                 <Users className="h-3.5 w-3.5" />
@@ -309,6 +354,30 @@ export function LiveRevealFollower({
           </div>
         </div>
       </header>
+
+      <ShopOverlayWindow
+        open={shopOpen}
+        onOpenChange={setShopOpen}
+        gamePhase={gamePhase}
+        hasTeam={Boolean(myPlayerRecord?.team_id)}
+        isTeamLeader={isTeamLeader}
+        myTeam={myTeam}
+        teamPowerups={teamPowerups}
+        liveSession={liveSession}
+        buyError={buyError}
+        buyPending={buyPending}
+        onBuy={handleBuyPowerup}
+      />
+      <InventoryOverlayWindow
+        open={inventoryOpen}
+        onOpenChange={setInventoryOpen}
+        userId={userId}
+        hasTeam={Boolean(myPlayerRecord?.team_id)}
+        myPowerups={myPowerups}
+        teamPowerups={teamPowerups}
+        liveSession={liveSession}
+        teamName={myTeam?.name}
+      />
 
       <div className="relative min-h-0 flex-1">
         {loadError ? (
@@ -347,10 +416,6 @@ export function LiveRevealFollower({
                const gamePhase = liveSession.game_phase ?? "lobby"
                
                if (gamePhase === "playing" && myPlayerRecord?.team_id) {
-                  const myTeam = teams.find(t => t.id === myPlayerRecord?.team_id)
-                  const teamPowerups = myTeam?.powerups && myTeam.powerups.$isLoaded ? Array.from(myTeam.powerups).filter((pu): pu is Loaded<typeof Powerup> => !!(pu && pu.$isLoaded)) : []
-                  const myPowerups = teamPowerups.filter(pu => pu.owner_account_id === userId && !pu.is_used)
-                  
                   return (
                      <div className="absolute top-4 left-4 z-40 flex flex-col gap-2 pointer-events-none">
                         <div className="flex items-center gap-2 rounded-full border border-border/40 bg-background/80 px-3 py-1.5 shadow-sm backdrop-blur-md">
@@ -362,7 +427,7 @@ export function LiveRevealFollower({
                            <div className="flex flex-col gap-1.5 pointer-events-auto">
                               {myPowerups.map((pu, i) => {
                                  if(!pu) return null
-                                 const puName = pu.type.replace("_", " ")
+                                 const puName = formatPowerupLabel(pu.type)
                                  return (
                                     <button key={i} className="flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm backdrop-blur-md transition-all hover:bg-primary/20 hover:scale-105 active:scale-95">
                                        <Star className="h-3 w-3 fill-current" />
@@ -377,83 +442,20 @@ export function LiveRevealFollower({
                }
                
                if (gamePhase === "store" && myPlayerRecord?.team_id) {
-                  const myTeam = teams.find(t => t.id === myPlayerRecord?.team_id)
-                  const isLeader = myTeam?.leader_account_id === userId
-                  const teamPowerups = myTeam?.powerups && myTeam.powerups.$isLoaded ? Array.from(myTeam.powerups).filter((pu): pu is Loaded<typeof Powerup> => !!(pu && pu.$isLoaded)) : []
-                  
-                  const POWERUPS: {type: z.infer<typeof PowerupType>, name: string, desc: string, cost: number}[] = [
-                     {type: "1/4", name: "1/4", desc: "Eliminate 1 incorrect option.", cost: 20},
-                     {type: "healing_potion", name: "Healing Potion", desc: "Gift 1 HP to another team.", cost: 20},
-                     {type: "shield", name: "Shield", desc: "Block the next 1 HP of damage.", cost: 30},
-                     {type: "espionage", name: "Espionage", desc: "See what option 1st-place team hovers.", cost: 30},
-                     {type: "medkit", name: "Medkit", desc: "Restore 2 HP instantly.", cost: 40},
-                     {type: "double_damage", name: "Double Damage", desc: "Deal 2 HP instead of 1.", cost: 40},
-                     {type: "deflect", name: "Deflect", desc: "Bounce damage back to attacker.", cost: 50},
-                     {type: "critical_hit", name: "Critical Hit", desc: "Deals 3 HP if 100% accuracy.", cost: 60},
-                  ]
-                  
-                  if (isLeader) {
+                  if (isTeamLeader) {
                      return (
-                        <div className="absolute inset-0 z-50 flex flex-col bg-background p-4 md:p-8 overflow-auto animate-in fade-in zoom-in-95 duration-500" role="presentation">
-                           <div className="mx-auto w-full max-w-4xl flex flex-col items-center gap-6">
-                              <div className="text-center">
-                                 <h2 className="text-4xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-600">Powerup Store</h2>
-                                 <p className="mt-2 text-lg text-muted-foreground font-medium">Equip your team for the battle ahead.</p>
-                              </div>
-                              
-                              <div className="flex items-center gap-4 mb-4">
-                                 <div className="flex items-center gap-2 rounded-2xl bg-amber-500/10 px-6 py-3 border border-amber-500/20">
-                                    <Star className="h-6 w-6 text-amber-500 fill-amber-500" />
-                                    <span className="text-2xl font-bold text-amber-500">{myTeam?.banked_play_points ?? 0}</span>
-                                    <span className="text-sm font-semibold opacity-70 uppercase tracking-widest text-amber-500 ml-1 mt-1">PlayPoints</span>
-                                 </div>
-                              </div>
-                              
-                              {buyError && <p className="text-destructive font-medium bg-destructive/10 p-3 rounded-lg w-full text-center border border-destructive/20">{buyError}</p>}
-                              
-                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
-                                 {POWERUPS.map(pu => {
-                                    const canAfford = (myTeam?.banked_play_points ?? 0) >= pu.cost
-                                    return (
-                                       <button
-                                          key={pu.type}
-                                          disabled={buyPending || !canAfford}
-                                          onClick={() => handleBuyPowerup(pu.type, pu.cost)}
-                                          className={cn(
-                                             "relative flex flex-col text-left items-start gap-3 p-5 rounded-2xl border-2 transition-all duration-300",
-                                             canAfford 
-                                                ? "bg-card hover:bg-muted/50 border-border hover:border-primary/50 hover:shadow-lg hover:-translate-y-1 active:scale-95" 
-                                                : "bg-muted/20 border-border/50 opacity-60 cursor-not-allowed"
-                                          )}
-                                       >
-                                          <div className="flex items-center justify-between w-full">
-                                             <h3 className="font-bold text-base leading-tight">{pu.name}</h3>
-                                             <span className={cn("text-xs font-bold px-2 py-1 rounded-full", canAfford ? "bg-amber-500/20 text-amber-500" : "bg-muted text-muted-foreground")}>{pu.cost} PP</span>
-                                          </div>
-                                          <p className="text-xs text-muted-foreground leading-snug">{pu.desc}</p>
-                                       </button>
-                                    )
-                                 })}
-                              </div>
-                              
-                              {teamPowerups.length > 0 && (
-                                 <div className="w-full mt-6 bg-card/50 rounded-2xl p-6 border border-border">
-                                    <h3 className="text-sm font-bold uppercase tracking-widest opacity-70 mb-4">Acquired Inventory (Randomly Assigned)</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                       {teamPowerups.map((pu, i) => {
-                                          const member = liveSession.joined_players && liveSession.joined_players.$isLoaded ? Array.from(liveSession.joined_players).find(p => p && p.$isLoaded && p.account_id === pu.owner_account_id) as Loaded<typeof SessionPlayer> | undefined : null
-                                          return (
-                                             <div key={i} className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-sm font-medium">
-                                                <span className="capitalize">{pu.type.replace("_", " ")}</span>
-                                                <span className="opacity-40">→</span>
-                                                <span className="font-semibold text-primary truncate max-w-[100px]">{member ? member.name : "Member"}</span>
-                                             </div>
-                                          )
-                                       })}
-                                    </div>
-                                 </div>
-                              )}
-                           </div>
+                        <div className="absolute inset-0 z-50 flex flex-col overflow-auto bg-background p-4 md:p-8 duration-500 animate-in fade-in zoom-in-95" role="presentation">
+                           <PowerupStoreCatalog
+                              variant="fullscreen"
+                              canPurchase
+                              readOnlyNotice={null}
+                              myTeam={myTeam}
+                              teamPowerups={teamPowerups}
+                              liveSession={liveSession}
+                              buyError={buyError}
+                              buyPending={buyPending}
+                              onBuy={handleBuyPowerup}
+                           />
                         </div>
                      )
                   }
@@ -483,7 +485,7 @@ export function LiveRevealFollower({
                                                 <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                                                    <Star className="h-4 w-4 opacity-50" />
                                                 </div>
-                                                <span className="font-semibold capitalize text-sm">{pu.type.replace("_", " ")}</span>
+                                                <span className="font-semibold capitalize text-sm">{formatPowerupLabel(pu.type)}</span>
                                              </div>
                                              <div className="flex items-center gap-1.5 text-sm">
                                                 <span className="opacity-50">Received by</span>
@@ -503,7 +505,7 @@ export function LiveRevealFollower({
                return null
             })()}
 
-            {formationState === "open" ? (
+            {formationState === "open" && gamePhase !== "battle_royale" ? (
                <div className="absolute inset-0 z-20 flex flex-col bg-background/95 backdrop-blur-sm p-6 overflow-auto" role="presentation">
                   <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
                      {myPlayerRecord?.team_id ? (
@@ -514,10 +516,7 @@ export function LiveRevealFollower({
                            <h2 className="text-3xl font-black tracking-tight mb-2">You&apos;re in!</h2>
                            <p className="text-muted-foreground">Waiting for the presenter to start the game.</p>
                            {(() => {
-                              const myTeam = teams.find(t => t.id === myPlayerRecord?.team_id)
-                              const isLeader = myTeam?.leader_account_id === userId
-                              
-                              if (isLeader) {
+                              if (isTeamLeader) {
                                   return (
                                      <div className="mt-8 flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-sm font-semibold text-amber-500">
                                         <Star className="h-4 w-4 fill-amber-500/50" />
@@ -655,14 +654,137 @@ export function LiveRevealFollower({
                   {(() => {
                     const question = slides[revealIndex].question!
                     const state = questionStatus(liveSession, question.questionKey)
-                    const resultsVisible = state === "revealed"
-                    const counts = resultsVisible
+                    const counts = state === "revealed"
                       ? aggregateQuestionCounts(
-                        liveSession,
-                        question.questionKey,
-                        question.options.length,
-                      )
+                          liveSession,
+                          question.questionKey,
+                          question.options.length,
+                        )
                       : Array.from({ length: question.options.length }, () => 0)
+
+                    if (liveSession.game_phase === "battle_royale") {
+                      const battleState = liveSession.battle_state
+                      if (!battleState || !battleState.$isLoaded) {
+                        return (
+                          <div className="flex h-full flex-col items-center justify-center gap-3 bg-background p-6">
+                            <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground">
+                              Loading battle state…
+                            </p>
+                          </div>
+                        )
+                      }
+                      const phase = battleState.phase ?? "target_selection"
+
+                      if (phase === "target_selection") {
+                        if (!me.$isLoaded) {
+                          return (
+                            <div className="flex h-full items-center justify-center bg-background p-6 text-center text-foreground">
+                              <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-muted-foreground" />
+                              Loading account…
+                            </div>
+                          )
+                        }
+                        return (
+                          <BattleRoyaleAudience
+                            liveSession={liveSession}
+                            me={me as Loaded<typeof PlaydeckAccount>}
+                            myPlayerRecord={myPlayerRecord}
+                            teams={teams}
+                          />
+                        )
+                      }
+
+                      if (phase === "battle_log") {
+                        return (
+                          <BattleLog liveSession={liveSession} variant="audience" />
+                        )
+                      }
+
+                      if (phase === "podium") {
+                        return (
+                          <BattlePodium liveSession={liveSession} variant="audience" />
+                        )
+                      }
+
+                      const isLeader = myPlayerRecord?.team_id
+                        ? teams.find(
+                            (t) => t.id === myPlayerRecord.team_id,
+                          )?.leader_account_id === myPlayerRecord.account_id
+                        : false
+
+                      const sharedMcq = (
+                        <QuestionSlideCard
+                          layout="overlay"
+                          block={question}
+                          variant="audience"
+                          state={state}
+                          resultsVisible={state === "revealed"}
+                          counts={counts}
+                          answeredCount={countQuestionAnswers(
+                            liveSession,
+                            question.questionKey,
+                          )}
+                          myAnswer={myQuestionAnswer(
+                            liveSession,
+                            userId,
+                            question.questionKey,
+                          )}
+                          audienceAccountId={userId}
+                          audienceHideCanonicalOptionIndex={getQuarterStrikeHiddenCanonicalIndex(
+                            liveSession,
+                            userId,
+                            myPlayerRecord?.team_id,
+                            question.options,
+                          )}
+                          submitError={questionError}
+                          submitPending={questionPending}
+                          accountReady={me.$isLoaded}
+                          onSubmit={(optionIndex) => {
+                            setQuestionErrorState({
+                              questionKey: question.questionKey,
+                              message: null,
+                            })
+                            startQuestionSubmit(() => {
+                              if (!me.$isLoaded) {
+                                setQuestionErrorState({
+                                  questionKey: question.questionKey,
+                                  message: "Connecting...",
+                                })
+                                return
+                              }
+                              assertLoaded(me)
+                              const result = submitQuestionAnswer(me, liveSession, {
+                                questionKey: question.questionKey,
+                                optionIndex,
+                                optionCount: question.options.length,
+                              })
+                              if (!result.ok) {
+                                setQuestionErrorState({
+                                  questionKey: question.questionKey,
+                                  message: result.error,
+                                })
+                              }
+                            })
+                          }}
+                        />
+                      )
+
+                      if (phase === "question_active") {
+                        return (
+                          <div className="flex h-full flex-col">
+                            <div className="border-b border-red-500/30 bg-red-600/20 px-4 py-2 text-center text-sm font-semibold text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+                              {isLeader
+                                ? "You are the Team Leader! Choose your attack carefully."
+                                : "Help your Team Leader decide the correct answer!"}
+                            </div>
+                            <div className="relative flex-1">{sharedMcq}</div>
+                          </div>
+                        )
+                      }
+
+                      return sharedMcq
+                    }
 
                     return (
                       <QuestionSlideCard
@@ -670,32 +792,19 @@ export function LiveRevealFollower({
                         block={question}
                         variant="audience"
                         state={state}
-                        resultsVisible={resultsVisible}
+                        resultsVisible={state === "revealed"}
                         counts={counts}
-                        answeredCount={countQuestionAnswers(
-                          liveSession,
-                          question.questionKey,
-                        )}
-                        myAnswer={myQuestionAnswer(
-                          liveSession,
-                          userId,
-                          question.questionKey,
-                        )}
+                        answeredCount={countQuestionAnswers(liveSession, question.questionKey)}
+                        myAnswer={myQuestionAnswer(liveSession, userId, question.questionKey)}
                         audienceAccountId={userId}
                         submitError={questionError}
                         submitPending={questionPending}
                         accountReady={me.$isLoaded}
                         onSubmit={(optionIndex) => {
-                          setQuestionErrorState({
-                            questionKey: question.questionKey,
-                            message: null,
-                          })
+                          setQuestionErrorState({ questionKey: question.questionKey, message: null })
                           startQuestionSubmit(() => {
                             if (!me.$isLoaded) {
-                              setQuestionErrorState({
-                                questionKey: question.questionKey,
-                                message: "Still connecting. Try again in a moment.",
-                              })
+                              setQuestionErrorState({ questionKey: question.questionKey, message: "Connecting..." })
                               return
                             }
                             assertLoaded(me)
@@ -705,10 +814,7 @@ export function LiveRevealFollower({
                               optionCount: question.options.length,
                             })
                             if (!result.ok) {
-                              setQuestionErrorState({
-                                questionKey: question.questionKey,
-                                message: result.error,
-                              })
+                              setQuestionErrorState({ questionKey: question.questionKey, message: result.error })
                             }
                           })
                         }}

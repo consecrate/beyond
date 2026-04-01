@@ -7,15 +7,19 @@ import {
   slidesToMarkdownDocument,
 } from "@/features/decks/slide-markdown-document"
 import {
+  BattlePowerupSelection,
+  BattleRoundEntry,
+  BattleRoundSummary,
+  BattleState,
   Deck,
   LiveSession,
   PlaydeckAccount,
   PollVote,
-  QuestionState,
-  SessionPlayer,
-  QuestionSubmission,
-  Team,
   Powerup,
+  QuestionState,
+  QuestionSubmission,
+  SessionPlayer,
+  Team,
   type PowerupType,
 } from "@/features/jazz/schema"
 
@@ -370,6 +374,14 @@ export function startQuestion(
       liveSession.$jazz.owner,
     ),
   )
+
+  if (liveSession.game_phase === "battle_royale") {
+    const battleState = liveSession.battle_state
+    if (battleState && battleState.$isLoaded) {
+      battleState.$jazz.applyDiff({ phase: "question_active", question_key: questionKey })
+    }
+  }
+
   return { ok: true }
 }
 
@@ -404,6 +416,213 @@ export function stopQuestion(
         if (!entry || !entry.$isLoaded) continue
         if (entry.question_key === questionKey && entry.option_index === correctOptionIndex) {
           awardPlayPoints(liveSession, entry.user_id, 20)
+        }
+      }
+    }
+
+    if (liveSession.game_phase === "battle_royale") {
+      const battleState = liveSession.battle_state
+      if (battleState && battleState.$isLoaded) {
+        assertLoaded(battleState)
+        battleState.$jazz.applyDiff({ phase: "results" })
+
+        const leaderAnswers = new Map<string, number>()
+        const teams = liveSession.teams
+        if (teams && teams.$isLoaded) {
+          for (const t of teams) {
+            if (!t || !t.$isLoaded || !t.leader_account_id) continue
+            let leaderSub: Loaded<typeof QuestionSubmission> | null = null
+            if (submissions) {
+              for (const entry of submissions) {
+                if (!entry || !entry.$isLoaded) continue
+                if (
+                  entry.question_key === questionKey &&
+                  entry.user_id === t.leader_account_id
+                ) {
+                  leaderSub = entry
+                  break
+                }
+              }
+            }
+            if (leaderSub) {
+              leaderAnswers.set(t.id, leaderSub.option_index)
+            }
+          }
+
+          const hpBefore = new Map<string, number>()
+          for (const t of teams) {
+            if (!t || !t.$isLoaded) continue
+            hpBefore.set(t.id, t.hp ?? 0)
+          }
+
+          const targets = battleState.targets ?? {}
+          const teamById = new Map<string, Loaded<typeof Team>>()
+          for (const t of teams) {
+            if (t && t.$isLoaded) teamById.set(t.id, t)
+          }
+
+          /** Confirmed round power-up per team (only `status === "confirmed"`). */
+          const confirmedEffect = new Map<
+            string,
+            {
+              type: z.infer<typeof PowerupType>
+              picker_account_id: string
+              healing_target_team_id?: string
+            }
+          >()
+          const selList = battleState.powerup_selections
+          if (selList && selList.$isLoaded) {
+            assertLoaded(selList)
+            for (const s of selList) {
+              if (!s || !s.$isLoaded) continue
+              if (s.status !== "confirmed") continue
+              confirmedEffect.set(s.team_id, {
+                type: s.powerup_type,
+                picker_account_id: s.picker_account_id,
+                healing_target_team_id: s.healing_target_team_id,
+              })
+            }
+          }
+
+          /** Outgoing damage from attacker team to their target (only if correct). */
+          const attackDamage = new Map<string, number>()
+          for (const t of teams) {
+            if (!t || !t.$isLoaded) continue
+            if (t.hp === undefined || t.hp <= 0) continue
+            const answer = leaderAnswers.get(t.id)
+            if (answer !== correctOptionIndex) continue
+            const targetId = targets[t.id]
+            if (!targetId) continue
+            const fx = confirmedEffect.get(t.id)
+            let dmg = 1
+            if (fx?.type === "double_damage") dmg = 2
+            else if (fx?.type === "critical_hit") dmg = 3
+            attackDamage.set(t.id, dmg)
+          }
+
+          const rawIncomingToTarget = new Map<string, number>()
+          for (const [attackerId, dmg] of attackDamage) {
+            const tid = targets[attackerId]
+            if (!tid) continue
+            rawIncomingToTarget.set(tid, (rawIncomingToTarget.get(tid) ?? 0) + dmg)
+          }
+
+          const damageToAttackerTeam = new Map<string, number>()
+
+          for (const [targetTeamId, rawTotal] of rawIncomingToTarget) {
+            const defFx = confirmedEffect.get(targetTeamId)
+            let incoming = rawTotal
+            if (defFx?.type === "shield") {
+              incoming = Math.max(0, incoming - 1)
+            }
+            if (defFx?.type === "deflect" && rawTotal > 0) {
+              for (const [attackerId, dmg] of attackDamage) {
+                if (targets[attackerId] !== targetTeamId) continue
+                const share = Math.round((dmg / rawTotal) * incoming)
+                damageToAttackerTeam.set(
+                  attackerId,
+                  (damageToAttackerTeam.get(attackerId) ?? 0) + share,
+                )
+              }
+            } else {
+              const targetTeam = teamById.get(targetTeamId)
+              if (targetTeam && targetTeam.hp !== undefined) {
+                const newHp = Math.max(0, targetTeam.hp - incoming)
+                targetTeam.$jazz.applyDiff({ hp: newHp })
+                if (newHp === 0) {
+                  targetTeam.$jazz.applyDiff({ status: "downed" })
+                }
+              }
+            }
+          }
+
+          for (const [attackerTeamId, dmgBack] of damageToAttackerTeam) {
+            const att = teamById.get(attackerTeamId)
+            if (!att || att.hp === undefined) continue
+            const newHp = Math.max(0, att.hp - dmgBack)
+            att.$jazz.applyDiff({ hp: newHp })
+            if (newHp === 0) {
+              att.$jazz.applyDiff({ status: "downed" })
+            }
+          }
+
+          for (const [teamId, fx] of confirmedEffect) {
+            if (fx.type === "medkit") {
+              const tm = teamById.get(teamId)
+              if (tm && tm.hp !== undefined) {
+                tm.$jazz.applyDiff({ hp: tm.hp + 2 })
+              }
+            }
+            if (fx.type === "healing_potion" && fx.healing_target_team_id) {
+              const ht = teamById.get(fx.healing_target_team_id)
+              if (ht && ht.hp !== undefined) {
+                ht.$jazz.applyDiff({ hp: ht.hp + 1 })
+              }
+            }
+          }
+
+          for (const [teamId, fx] of confirmedEffect) {
+            const tm = teamById.get(teamId)
+            if (!tm || !tm.powerups || !tm.powerups.$isLoaded) continue
+            assertLoaded(tm.powerups)
+            const pu = findUnusedPowerupForPicker(tm, fx.picker_account_id, fx.type)
+            if (pu) {
+              pu.$jazz.applyDiff({ is_used: true })
+            }
+          }
+
+          const hpAfter = new Map<string, number>()
+          for (const t of teams) {
+            if (!t || !t.$isLoaded) continue
+            hpAfter.set(t.id, t.hp ?? 0)
+          }
+
+          const owner = liveSession.$jazz.owner
+          const entryList = co.list(BattleRoundEntry).create([], owner)
+          const teamArr = [...teams].filter(
+            (t): t is Loaded<typeof Team> => !!t && t.$isLoaded,
+          )
+
+          for (const t of teamArr) {
+            if ((hpBefore.get(t.id) ?? 0) <= 0) continue
+            const targetId = targets[t.id] ?? ""
+            const targetTeam = targetId
+              ? teamArr.find((x) => x.id === targetId)
+              : undefined
+            const targetName = targetTeam?.name ?? (targetId ? "Unknown" : "—")
+            const answer = leaderAnswers.get(t.id)
+            const wasCorrect = answer === correctOptionIndex
+            const atkDmg = wasCorrect && targetId ? (attackDamage.get(t.id) ?? 0) : 0
+            const tb = targetId ? (hpBefore.get(targetId) ?? 0) : 0
+            const ta = targetId ? (hpAfter.get(targetId) ?? 0) : 0
+            const downed = targetId ? ta === 0 : false
+
+            entryList.$jazz.push(
+              BattleRoundEntry.create(
+                {
+                  attacker_team_id: t.id,
+                  target_team_id: targetId,
+                  attacker_name: t.name,
+                  target_name: targetName,
+                  was_correct: wasCorrect,
+                  damage: atkDmg,
+                  target_hp_before: tb,
+                  target_hp_after: ta,
+                  target_downed: downed,
+                },
+                owner,
+              ),
+            )
+          }
+
+          const roundSummary = BattleRoundSummary.create(
+            {
+              question_key: questionKey,
+              entries: entryList,
+            },
+            owner,
+          )
+          battleState.$jazz.applyDiff({ round_summary: roundSummary })
         }
       }
     }
@@ -865,7 +1084,21 @@ export function startGameplay(
   assertLoaded(liveSession)
   if (me.$jazz.id !== liveSession.presenter_account_id) return
 
-  liveSession.$jazz.applyDiff({ game_phase: "playing" })
+  const owner = liveSession.$jazz.owner
+  const battleState = BattleState.create(
+    {
+      phase: "target_selection",
+      targets: {},
+      powerup_selections: co.list(BattlePowerupSelection).create([], owner),
+    },
+    owner,
+  )
+
+  liveSession.$jazz.applyDiff({
+    game_phase: "battle_royale",
+    battle_state: battleState,
+    team_formation_state: "idle",
+  })
 }
 
 export function purchasePowerup(
@@ -935,4 +1168,484 @@ export function purchasePowerup(
 
   return { ok: true }
 }
+
+export function showBattleLog(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) {
+    return { ok: false, error: "Only the presenter can show the battle log." }
+  }
+  if (liveSession.game_phase !== "battle_royale") {
+    return { ok: false, error: "Not in battle royale." }
+  }
+  const battleState = liveSession.battle_state
+  if (!battleState || !battleState.$isLoaded) {
+    return { ok: false, error: "Battle state not loaded." }
+  }
+  if (battleState.phase !== "results") {
+    return { ok: false, error: "Battle log is only available after results." }
+  }
+  battleState.$jazz.applyDiff({ phase: "battle_log" })
+  return { ok: true }
+}
+
+/** Final battle recap screen: top teams by HP. Only after battle log. */
+export function showPodium(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) {
+    return { ok: false, error: "Only the presenter can show the podium." }
+  }
+  if (liveSession.game_phase !== "battle_royale") {
+    return { ok: false, error: "Not in battle royale." }
+  }
+  const battleState = liveSession.battle_state
+  if (!battleState || !battleState.$isLoaded) {
+    return { ok: false, error: "Battle state not loaded." }
+  }
+  if (battleState.phase !== "battle_log") {
+    return { ok: false, error: "Podium is available after the battle log." }
+  }
+  battleState.$jazz.applyDiff({ phase: "podium" })
+  return { ok: true }
+}
+
+/** Exit battle royale after podium and return to normal slide flow. */
+export function leaveBattleRoyaleAfterPodium(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) {
+    return { ok: false, error: "Only the presenter can continue after the podium." }
+  }
+  if (liveSession.game_phase !== "battle_royale") {
+    return { ok: false, error: "Not in battle royale." }
+  }
+  const battleState = liveSession.battle_state
+  if (!battleState || !battleState.$isLoaded) {
+    return { ok: false, error: "Battle state not loaded." }
+  }
+  if (battleState.phase !== "podium") {
+    return { ok: false, error: "Not on the podium screen." }
+  }
+  liveSession.$jazz.applyDiff({
+    game_phase: "playing",
+    battle_state: undefined,
+  })
+  return { ok: true }
+}
+
+export function resetBattleTargetSelection(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+) {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+  if (me.$jazz.id !== liveSession.presenter_account_id) return
+
+  const battleState = liveSession.battle_state
+  if (battleState && battleState.$isLoaded) {
+    const owner = liveSession.$jazz.owner
+    battleState.$jazz.applyDiff({
+      phase: "target_selection",
+      targets: {},
+      round_summary: undefined,
+      powerup_selections: co.list(BattlePowerupSelection).create([], owner),
+    })
+  }
+}
+
+function ensureBattlePowerupSelectionsList(
+  liveSession: Loaded<typeof LiveSession>,
+  battleState: Loaded<typeof BattleState>,
+): void {
+  if (!battleState.$jazz.has("powerup_selections") || !battleState.powerup_selections) {
+    battleState.$jazz.set(
+      "powerup_selections",
+      co.list(BattlePowerupSelection).create([], liveSession.$jazz.owner),
+    )
+  }
+}
+
+function findPlayerTeamId(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+): string | null {
+  const players = liveSession.joined_players
+  if (!players) return null
+  assertLoaded(players)
+  for (const p of players) {
+    if (!p || !p.$isLoaded) continue
+    if (p.account_id === me.$jazz.id) {
+      return p.team_id ?? null
+    }
+  }
+  return null
+}
+
+function findTeamSelectionIndex(
+  battleState: Loaded<typeof BattleState>,
+  teamId: string,
+): number {
+  const list = battleState.powerup_selections
+  if (!list || !list.$isLoaded) return -1
+  assertLoaded(list)
+  const arr = [...list]
+  for (let i = 0; i < arr.length; i++) {
+    const s = arr[i]
+    if (s && s.$isLoaded && s.team_id === teamId) return i
+  }
+  return -1
+}
+
+function isPowerupTypeTakenByOtherTeam(
+  battleState: Loaded<typeof BattleState>,
+  powerupType: z.infer<typeof PowerupType>,
+  exceptTeamId: string,
+): boolean {
+  const list = battleState.powerup_selections
+  if (!list || !list.$isLoaded) return false
+  assertLoaded(list)
+  for (const s of list) {
+    if (!s || !s.$isLoaded) continue
+    if (s.team_id === exceptTeamId) continue
+    if (s.powerup_type === powerupType) return true
+  }
+  return false
+}
+
+function findUnusedPowerupForPicker(
+  team: Loaded<typeof Team>,
+  pickerId: string,
+  powerupType: z.infer<typeof PowerupType>,
+): Loaded<typeof Powerup> | null {
+  const powerups = team.powerups
+  if (!powerups || !powerups.$isLoaded) return null
+  assertLoaded(powerups)
+  for (const pu of powerups) {
+    if (!pu || !pu.$isLoaded) continue
+    if (pu.owner_account_id === pickerId && !pu.is_used && pu.type === powerupType) {
+      return pu
+    }
+  }
+  return null
+}
+
+/**
+ * Teammate (non-leader) claims a round power-up from their own unused inventory.
+ * Leader confirms separately via `confirmBattlePowerupClaim`.
+ */
+export function claimBattlePowerup(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  args: {
+    powerupType: z.infer<typeof PowerupType>
+    healingTargetTeamId?: string
+  },
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (liveSession.game_phase !== "battle_royale") {
+    return { ok: false, error: "Not in battle royale phase." }
+  }
+
+  const battleState = liveSession.battle_state
+  if (!battleState || !battleState.$isLoaded) {
+    return { ok: false, error: "Battle state not initialized." }
+  }
+  assertLoaded(battleState)
+
+  if (battleState.phase !== "target_selection") {
+    return { ok: false, error: "Power-ups can only be chosen during target selection." }
+  }
+
+  const teams = liveSession.teams
+  if (!teams || !teams.$isLoaded) return { ok: false, error: "No teams." }
+  assertLoaded(teams)
+
+  const myTeamId = findPlayerTeamId(me, liveSession)
+  if (!myTeamId) return { ok: false, error: "Join a team first." }
+
+  let myTeam: Loaded<typeof Team> | null = null
+  for (const t of teams) {
+    if (!t || !t.$isLoaded) continue
+    if (t.id === myTeamId) {
+      myTeam = t
+      break
+    }
+  }
+  if (!myTeam) return { ok: false, error: "Team not found." }
+
+  if (myTeam.leader_account_id === me.$jazz.id) {
+    return { ok: false, error: "Ask a teammate to pick a power-up; you confirm it as leader." }
+  }
+
+  const targets = battleState.targets ?? {}
+  if (!targets[myTeamId]) {
+    return { ok: false, error: "Your leader must choose an attack target first." }
+  }
+
+  const { powerupType, healingTargetTeamId } = args
+
+  if (powerupType === "healing_potion") {
+    if (!healingTargetTeamId) {
+      return { ok: false, error: "Choose a team to receive the healing potion." }
+    }
+    if (healingTargetTeamId === myTeamId) {
+      return { ok: false, error: "Heal another team, not your own." }
+    }
+    const ht = [...teams].find((t) => t && t.$isLoaded && t.id === healingTargetTeamId)
+    if (!ht || !ht.$isLoaded) {
+      return { ok: false, error: "Invalid heal target." }
+    }
+    if ((ht.hp ?? 0) <= 0 || ht.status === "downed") {
+      return { ok: false, error: "Cannot heal a downed team." }
+    }
+  } else if (healingTargetTeamId) {
+    return { ok: false, error: "Healing target only applies to healing potion." }
+  }
+
+  if (!findUnusedPowerupForPicker(myTeam, me.$jazz.id, powerupType)) {
+    return { ok: false, error: "You don't have an unused power-up of that type." }
+  }
+
+  ensureBattlePowerupSelectionsList(liveSession, battleState)
+  const list = battleState.powerup_selections
+  if (!list || !list.$isLoaded) return { ok: false, error: "Could not update power-up state." }
+  assertLoaded(list)
+
+  const idx = findTeamSelectionIndex(battleState, myTeamId)
+  const existing = idx >= 0 ? list[idx] : null
+
+  if (existing && existing.$isLoaded && existing.status === "confirmed") {
+    return { ok: false, error: "Power-up is already confirmed for this round." }
+  }
+
+  if (existing && existing.$isLoaded && existing.status === "pending") {
+    if (existing.picker_account_id !== me.$jazz.id) {
+      return { ok: false, error: "Only the teammate who picked can change this." }
+    }
+  }
+
+  if (!existing || !existing.$isLoaded) {
+    if (isPowerupTypeTakenByOtherTeam(battleState, powerupType, myTeamId)) {
+      return { ok: false, error: "Another team is already using this power-up type this round." }
+    }
+  } else if (existing.powerup_type !== powerupType) {
+    if (isPowerupTypeTakenByOtherTeam(battleState, powerupType, myTeamId)) {
+      return { ok: false, error: "Another team is already using this power-up type this round." }
+    }
+  }
+
+  if (existing && existing.$isLoaded) {
+    existing.$jazz.applyDiff({
+      powerup_type: powerupType,
+      picker_account_id: me.$jazz.id,
+      status: "pending",
+      healing_target_team_id:
+        powerupType === "healing_potion" ? healingTargetTeamId : undefined,
+    })
+    return { ok: true }
+  }
+
+  list.$jazz.push(
+    BattlePowerupSelection.create(
+      {
+        team_id: myTeamId,
+        powerup_type: powerupType,
+        picker_account_id: me.$jazz.id,
+        status: "pending",
+        healing_target_team_id:
+          powerupType === "healing_potion" ? healingTargetTeamId : undefined,
+      },
+      liveSession.$jazz.owner,
+    ),
+  )
+
+  return { ok: true }
+}
+
+/** Only the original picker can clear a pending claim (reopens global type for others). */
+export function clearBattlePowerupClaim(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (liveSession.game_phase !== "battle_royale") {
+    return { ok: false, error: "Not in battle royale phase." }
+  }
+
+  const battleState = liveSession.battle_state
+  if (!battleState || !battleState.$isLoaded) {
+    return { ok: false, error: "Battle state not initialized." }
+  }
+  assertLoaded(battleState)
+
+  if (battleState.phase !== "target_selection") {
+    return { ok: false, error: "Cannot change power-ups now." }
+  }
+
+  const myTeamId = findPlayerTeamId(me, liveSession)
+  if (!myTeamId) return { ok: false, error: "Join a team first." }
+
+  const list = battleState.powerup_selections
+  if (!list || !list.$isLoaded) return { ok: true }
+  assertLoaded(list)
+
+  const idx = findTeamSelectionIndex(battleState, myTeamId)
+  if (idx < 0) return { ok: true }
+
+  const sel = list[idx]
+  if (!sel || !sel.$isLoaded) return { ok: true }
+  if (sel.status !== "pending") {
+    return { ok: false, error: "Only a pending pick can be cleared." }
+  }
+  if (sel.picker_account_id !== me.$jazz.id) {
+    return { ok: false, error: "Only the teammate who picked can clear this." }
+  }
+
+  list.$jazz.splice(idx, 1)
+  return { ok: true }
+}
+
+/** Team leader confirms the pending power-up for their team. */
+export function confirmBattlePowerupClaim(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (liveSession.game_phase !== "battle_royale") {
+    return { ok: false, error: "Not in battle royale phase." }
+  }
+
+  const battleState = liveSession.battle_state
+  if (!battleState || !battleState.$isLoaded) {
+    return { ok: false, error: "Battle state not initialized." }
+  }
+  assertLoaded(battleState)
+
+  if (battleState.phase !== "target_selection") {
+    return { ok: false, error: "Cannot confirm power-ups now." }
+  }
+
+  const teams = liveSession.teams
+  if (!teams || !teams.$isLoaded) return { ok: false, error: "No teams." }
+  assertLoaded(teams)
+
+  let myTeamId: string | null = null
+  for (const t of teams) {
+    if (!t || !t.$isLoaded) continue
+    if (t.leader_account_id === me.$jazz.id) {
+      myTeamId = t.id
+      break
+    }
+  }
+  if (!myTeamId) {
+    return { ok: false, error: "Only the team leader can confirm the power-up." }
+  }
+
+  const list = battleState.powerup_selections
+  if (!list || !list.$isLoaded) {
+    return { ok: false, error: "Nothing to confirm." }
+  }
+  assertLoaded(list)
+
+  const idx = findTeamSelectionIndex(battleState, myTeamId)
+  if (idx < 0) return { ok: false, error: "No power-up pick to confirm." }
+
+  const sel = list[idx]
+  if (!sel || !sel.$isLoaded) return { ok: false, error: "Invalid selection." }
+  if (sel.status !== "pending") {
+    return { ok: false, error: "Nothing pending to confirm." }
+  }
+
+  if (sel.powerup_type === "healing_potion" && !sel.healing_target_team_id) {
+    return { ok: false, error: "Healing potion needs a heal target." }
+  }
+
+  let myTeam: Loaded<typeof Team> | null = null
+  for (const t of teams) {
+    if (!t || !t.$isLoaded) continue
+    if (t.id === myTeamId) {
+      myTeam = t
+      break
+    }
+  }
+  if (!myTeam || !findUnusedPowerupForPicker(myTeam, sel.picker_account_id, sel.powerup_type)) {
+    return { ok: false, error: "That power-up is no longer available in inventory." }
+  }
+
+  sel.$jazz.applyDiff({ status: "confirmed" })
+  return { ok: true }
+}
+
+export function selectBattleTarget(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  targetTeamId: string,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (liveSession.game_phase !== "battle_royale") {
+    return { ok: false, error: "Not in battle royale phase." }
+  }
+
+  const battleState = liveSession.battle_state
+  if (!battleState || !battleState.$isLoaded) {
+    return { ok: false, error: "Battle state not initialized." }
+  }
+  assertLoaded(battleState)
+
+  if (battleState.phase !== "target_selection") {
+    return { ok: false, error: "Targets can only be locked in during the target selection phase." }
+  }
+
+  let myTeamId: string | null = null
+  const teams = liveSession.teams
+  if (!teams || !teams.$isLoaded) return { ok: false, error: "No teams." }
+  assertLoaded(teams)
+
+  for (const t of teams) {
+    if (!t || !t.$isLoaded) continue
+    if (t.leader_account_id === me.$jazz.id) {
+      myTeamId = t.id
+      break
+    }
+  }
+
+  if (!myTeamId) {
+    return { ok: false, error: "Only team leaders can select targets." }
+  }
+
+  if (myTeamId === targetTeamId) {
+     return { ok: false, error: "You cannot target your own team." }
+  }
+
+  const targetTeam = [...teams].find(t => !!t && t.$isLoaded && t.id === targetTeamId)
+  if (targetTeam && targetTeam.$isLoaded && targetTeam.status === "downed") {
+     return { ok: false, error: "You cannot target a team that is already downed." }
+  }
+
+  const currentTargets = battleState.targets ? { ...battleState.targets } : {}
+  currentTargets[myTeamId] = targetTeamId
+
+  battleState.$jazz.applyDiff({ targets: currentTargets })
+
+  return { ok: true }
+}
+
 

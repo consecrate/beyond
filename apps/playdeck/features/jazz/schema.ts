@@ -36,9 +36,18 @@ export const PowerupType = z.union([
   z.literal("deflect"),
   z.literal("medkit"),
   z.literal("critical_hit"),
-  z.literal("espionage"),
-  z.literal("healing_potion")
+  z.literal("healing_potion"),
 ])
+
+/** One team's round-scoped power-up claim (pending until leader confirms). */
+export const BattlePowerupSelection = co.map({
+  team_id: z.string(),
+  powerup_type: PowerupType,
+  picker_account_id: z.string(),
+  status: z.union([z.literal("pending"), z.literal("confirmed")]),
+  /** Required when powerup_type is healing_potion: gift recipient team. */
+  healing_target_team_id: z.string().optional(),
+})
 
 export const Powerup = co.map({
   type: PowerupType,
@@ -64,10 +73,39 @@ export const SessionPlayer = co.map({
   team_id: z.string().optional(),
 })
 
+/** One row in the post-reveal battle log for the current round (ephemeral until next reset). */
+export const BattleRoundEntry = co.map({
+  attacker_team_id: z.string(),
+  target_team_id: z.string(),
+  attacker_name: z.string(),
+  target_name: z.string(),
+  was_correct: z.boolean(),
+  damage: z.number(),
+  target_hp_before: z.number(),
+  target_hp_after: z.number(),
+  target_downed: z.boolean(),
+})
+
+export const BattleRoundSummary = co.map({
+  question_key: z.string(),
+  entries: co.list(BattleRoundEntry),
+})
+
 export const BattleState = co.map({
   question_key: z.string().optional(),
-  phase: z.union([z.literal("target_selection"), z.literal("question_active"), z.literal("results")]).optional(),
+  phase: z
+    .union([
+      z.literal("target_selection"),
+      z.literal("question_active"),
+      z.literal("results"),
+      z.literal("battle_log"),
+      z.literal("podium"),
+    ])
+    .optional(),
   targets: z.record(z.string(), z.string()).optional(), // AttackingTeamId -> TargetTeamId
+  round_summary: BattleRoundSummary.optional(),
+  /** Per-round power-up claims (pending/confirmed); inventory is consumed on round resolve. */
+  powerup_selections: co.list(BattlePowerupSelection).optional(),
 })
 
 /** Public-read live deck snapshot + authoritative slide index for viewers. */

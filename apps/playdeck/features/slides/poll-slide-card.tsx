@@ -297,7 +297,7 @@ export function PollSlideCard({
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
             <p className="text-2xl font-bold text-foreground">Poll Closed</p>
             <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
-              You didn't cast a vote in time. Look at the presenter's screen for results!
+              You didn&apos;t cast a vote in time. Look at the presenter&apos;s screen for results!
             </p>
           </div>
         ) : null}

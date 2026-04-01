@@ -258,6 +258,10 @@ export function QuestionSlideCard({
   accountReady = true,
   onStart,
   onStop,
+  onPresenterNextQuestion,
+  presenterNextQuestionLabel = "Next question",
+  /** Battle 1/4 power-up: hide one incorrect option (canonical index) for this viewer only. */
+  audienceHideCanonicalOptionIndex,
 }: {
   block: QuestionBlock
   variant: QuestionSlideVariant
@@ -268,12 +272,17 @@ export function QuestionSlideCard({
   answeredCount: number
   myAnswer: number | null
   audienceAccountId?: string
+  /** When set, that option is omitted from the audience answer grid (e.g. 1/4 power-up). */
+  audienceHideCanonicalOptionIndex?: number | null
   onSubmit?: (canonicalIndex: number) => void
   submitPending?: boolean
   submitError?: string | null
   accountReady?: boolean
   onStart?: () => void
   onStop?: () => void
+  /** Presenter overlay only: CTA after reveal to advance (e.g. battle royale next round). */
+  onPresenterNextQuestion?: () => void
+  presenterNextQuestionLabel?: string
 }) {
   const overlay = layout === "overlay"
   const audienceTheater = overlay && variant === "audience"
@@ -281,6 +290,18 @@ export function QuestionSlideCard({
     () => shuffledQuestionRows(block, audienceAccountId, variant),
     [audienceAccountId, block, variant],
   )
+
+  const audienceAnswerRows = useMemo(() => {
+    if (
+      audienceHideCanonicalOptionIndex == null ||
+      audienceHideCanonicalOptionIndex < 0
+    ) {
+      return orderedRows
+    }
+    return orderedRows.filter(
+      (row) => row.canonicalIndex !== audienceHideCanonicalOptionIndex,
+    )
+  }, [audienceHideCanonicalOptionIndex, orderedRows])
 
   const showPreview = variant === "preview"
   const showIdle = variant !== "preview" && state === "idle"
@@ -304,7 +325,7 @@ export function QuestionSlideCard({
     Boolean(onSubmit) && accountReady && !submitPending
 
   if (audienceTheater) {
-    const gridCols = audienceGridColsClass(orderedRows.length)
+    const gridCols = audienceGridColsClass(audienceAnswerRows.length)
     const submitDisabled = !canSubmit
 
     return (
@@ -349,10 +370,10 @@ export function QuestionSlideCard({
                 gridCols,
               )}
             >
-              {orderedRows.map((row, displayIndex) => {
+              {audienceAnswerRows.map((row, displayIndex) => {
                 const tileClass = audienceOptionTileClass()
                 const spanThird =
-                  orderedRows.length === 3 && displayIndex === 2 ? "col-span-2" : ""
+                  audienceAnswerRows.length === 3 && displayIndex === 2 ? "col-span-2" : ""
                 return (
                   <button
                     key={row.canonicalIndex}
@@ -586,6 +607,28 @@ export function QuestionSlideCard({
           )}
         >
           <span>{formatAnsweredCount(answeredCount)}</span>
+        </div>
+      ) : null}
+
+      {variant === "presenter" &&
+      overlay &&
+      showResults &&
+      onPresenterNextQuestion ? (
+        <div
+          className={cn(
+            "mt-6 flex w-full",
+            overlay ? "justify-center" : "",
+          )}
+        >
+          <Button
+            type="button"
+            variant="default"
+            size="lg"
+            className={cn(overlay && "rounded-none px-8")}
+            onClick={onPresenterNextQuestion}
+          >
+            {presenterNextQuestionLabel}
+          </Button>
         </div>
       ) : null}
 

@@ -17,6 +17,9 @@ import type { LiveSession, SessionPlayer } from "@/features/jazz/schema"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { BattleLog } from "@/features/slides/battle-log"
+import { BattlePodium } from "@/features/slides/battle-podium"
+import { BattleRoyaleArena } from "@/features/slides/battle-royale-arena"
 import { Button, buttonVariants, cn } from "@beyond/design-system"
 import {
   ChevronLeft,
@@ -55,6 +58,14 @@ export type DeckLiveControls = {
   onAutoAssignTeams?: () => void | Promise<void>
   onStartGameStore?: () => void | Promise<void>
   onStartGameplay?: () => void | Promise<void>
+  /** Reset battle targets / phase before advancing to the next question slide (presenter only). */
+  onResetBattleRound?: () => void | Promise<void>
+  /** After revealed results, move everyone to the shared Battle Log screen (presenter only). */
+  onShowBattleLog?: () => void | Promise<void>
+  /** After battle log on the final battle question, show the Podium (presenter only). */
+  onShowPodium?: () => void | Promise<void>
+  /** Leave battle royale after Podium and return to normal slides (presenter only). */
+  onLeaveBattleRoyaleAfterPodium?: () => void | Promise<void>
 }
 
 export type DeckRevealPresenterProps = {
@@ -69,6 +80,66 @@ const LAZY_RADIUS = 2
 
 const REVEAL_WIDTH = 960
 const REVEAL_HEIGHT = 700
+
+const BATTLE_ROYALE_TITLE_LC = "battle royale"
+
+/** First question slide after `# Battle Royale`, else first slide with a question in the deck. */
+export function findFirstBattleQuestionSlideIndex(
+  slides: RevealSlideModel[],
+): number | null {
+  const n = slides.length
+  if (n < 1) return null
+
+  let battleRoyaleIdx = -1
+  for (let i = 0; i < n; i++) {
+    if (slides[i]?.title?.trim().toLowerCase() === BATTLE_ROYALE_TITLE_LC) {
+      battleRoyaleIdx = i
+      break
+    }
+  }
+
+  if (battleRoyaleIdx >= 0) {
+    for (let j = battleRoyaleIdx + 1; j < n; j++) {
+      if (slides[j]?.question) return j
+    }
+  }
+
+  for (let k = 0; k < n; k++) {
+    if (slides[k]?.question) return k
+  }
+
+  return null
+}
+
+/** Last question slide in the Battle Royale section (after `# Battle Royale`), else last question in deck. */
+export function findLastBattleQuestionSlideIndex(
+  slides: RevealSlideModel[],
+): number | null {
+  const n = slides.length
+  if (n < 1) return null
+
+  let battleRoyaleIdx = -1
+  for (let i = 0; i < n; i++) {
+    if (slides[i]?.title?.trim().toLowerCase() === BATTLE_ROYALE_TITLE_LC) {
+      battleRoyaleIdx = i
+      break
+    }
+  }
+
+  let lastQuestionIdx = -1
+  if (battleRoyaleIdx >= 0) {
+    for (let j = battleRoyaleIdx + 1; j < n; j++) {
+      if (slides[j]?.question) lastQuestionIdx = j
+    }
+    if (lastQuestionIdx >= 0) return lastQuestionIdx
+  }
+
+  for (let k = n - 1; k >= 0; k--) {
+    if (slides[k]?.question) return k
+  }
+
+  return null
+}
 
 export function RevealSlideBody({
   slide,
@@ -300,7 +371,18 @@ export function DeckRevealPresenter({
     setActiveIndex(h)
     replaceSlideQuery(h)
     liveSlideSyncRef.current?.(h)
-  }, [replaceSlideQuery])
+
+    if (live?.isActive && live.liveSession && live.onSetLobbyVisible) {
+      const slideTitle = slides[h]?.title?.trim()?.toLowerCase() || ""
+      if (slideTitle === "battle royale") {
+        live.onSetLobbyVisible(true)
+        // Ensure game phase is set to lobby so we can do team formation again if needed, or just let them go to store.
+        if (live.liveSession.game_phase === "playing" || !live.liveSession.game_phase) {
+          // It's probably better to add a formal mutation for this, but for now we rely on the host's Lobby controls.
+        }
+      }
+    }
+  }, [replaceSlideQuery, slides, live])
 
   useEffect(() => {
     onSlideChangedHandlerRef.current = onSlideChanged
@@ -369,15 +451,24 @@ export function DeckRevealPresenter({
     setView((v) => (v === "slide" ? "grid" : "slide"))
   }, [])
 
+  const goToSlide = useCallback(
+    (i: number) => {
+      const max = Math.max(0, numSlides - 1)
+      const clamped = Math.min(Math.max(0, i), max)
+      setActiveIndex(clamped)
+      deckApiRef.current?.slide(clamped, 0)
+      replaceSlideQuery(clamped)
+      liveSlideSyncRef.current?.(clamped)
+    },
+    [numSlides, replaceSlideQuery],
+  )
+
   const onGridPickSlide = useCallback(
     (i: number) => {
-      setActiveIndex(i)
-      deckApiRef.current?.slide(i, 0)
-      replaceSlideQuery(i)
-      liveSlideSyncRef.current?.(i)
+      goToSlide(i)
       setView("slide")
     },
-    [replaceSlideQuery],
+    [goToSlide],
   )
 
   if (numSlides < 1) {
@@ -625,6 +716,91 @@ export function DeckRevealPresenter({
                           )
                           : Array.from({ length: question.options.length }, () => 0)
 
+                        const isBattleRoyale =
+                          live.liveSession.game_phase === "battle_royale"
+                        let activeBattlePhase:
+                          | "target_selection"
+                          | "question_active"
+                          | "results"
+                          | "battle_log"
+                          | "podium"
+                          | undefined
+                        if (isBattleRoyale) {
+                          const battleState = live.liveSession.battle_state
+                          if (!battleState || !battleState.$isLoaded) {
+                            return (
+                              <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+                                <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                                <p className="text-sm text-muted-foreground">
+                                  Loading battle state…
+                                </p>
+                              </div>
+                            )
+                          }
+                          const battlePhase =
+                            battleState.phase ?? "target_selection"
+                          activeBattlePhase = battlePhase
+                          if (battlePhase === "target_selection") {
+                            return (
+                              <BattleRoyaleArena
+                                liveSession={live.liveSession}
+                                onStartQuestion={
+                                  live.onStartQuestion
+                                    ? () =>
+                                        void live.onStartQuestion?.(
+                                          question.questionKey,
+                                        )
+                                    : () => {}
+                                }
+                              />
+                            )
+                          }
+
+                          if (battlePhase === "battle_log") {
+                            return (
+                              <BattleLog
+                                liveSession={live.liveSession}
+                                variant="presenter"
+                                onNextQuestion={
+                                  live.onResetBattleRound
+                                    ? () => {
+                                        const lastBattle =
+                                          findLastBattleQuestionSlideIndex(slides)
+                                        if (
+                                          live.onShowPodium &&
+                                          lastBattle !== null &&
+                                          activeIndex === lastBattle
+                                        ) {
+                                          void live.onShowPodium()
+                                        } else {
+                                          void live.onResetBattleRound?.()
+                                          goNext()
+                                        }
+                                      }
+                                    : undefined
+                                }
+                              />
+                            )
+                          }
+
+                          if (battlePhase === "podium") {
+                            return (
+                              <BattlePodium
+                                liveSession={live.liveSession}
+                                variant="presenter"
+                                onContinue={
+                                  live.onLeaveBattleRoyaleAfterPodium
+                                    ? () => {
+                                        void live.onLeaveBattleRoyaleAfterPodium?.()
+                                        goNext()
+                                      }
+                                    : undefined
+                                }
+                              />
+                            )
+                          }
+                        }
+
                         return (
                           <QuestionSlideCard
                             layout="overlay"
@@ -640,13 +816,31 @@ export function DeckRevealPresenter({
                             myAnswer={null}
                             onStart={
                               live.onStartQuestion
-                                ? () => void live.onStartQuestion?.(question.questionKey)
+                                ? () =>
+                                    void live.onStartQuestion?.(
+                                      question.questionKey,
+                                    )
                                 : undefined
                             }
                             onStop={
                               live.onStopQuestion
-                                ? () => void live.onStopQuestion?.(question.questionKey, question.correctOptionIndex)
+                                ? () =>
+                                    void live.onStopQuestion?.(
+                                      question.questionKey,
+                                      question.correctOptionIndex,
+                                    )
                                 : undefined
+                            }
+                            onPresenterNextQuestion={
+                              isBattleRoyale &&
+                              resultsVisible &&
+                              activeBattlePhase === "results" &&
+                              live.onShowBattleLog
+                                ? () => void live.onShowBattleLog?.()
+                                : undefined
+                            }
+                            presenterNextQuestionLabel={
+                              isBattleRoyale ? "Show Battle Log" : "Next question"
                             }
                           />
                         )
@@ -760,8 +954,10 @@ export function DeckRevealPresenter({
                                   size="lg" 
                                   className="h-16 rounded-full px-12 text-2xl font-black uppercase tracking-wider shadow-[0_0_30px_-5px_hsl(var(--primary))] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_50px_-5px_hsl(var(--primary))] bg-primary text-primary-foreground"
                                   onClick={() => {
-                                     live.onSetLobbyVisible?.(false)
-                                     live.onStartGameplay?.()
+                                     void live.onSetLobbyVisible?.(false)
+                                     void live.onStartGameplay?.()
+                                     const target = findFirstBattleQuestionSlideIndex(slides)
+                                     if (target !== null) goToSlide(target)
                                   }}
                                 >
                                   Begin Battle

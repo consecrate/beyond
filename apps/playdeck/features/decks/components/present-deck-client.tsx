@@ -26,6 +26,10 @@ import {
   autoAssignRemainingTeams,
   startGameStore,
   startGameplay,
+  resetBattleTargetSelection,
+  showBattleLog,
+  showPodium,
+  leaveBattleRoyaleAfterPodium,
 } from "@/features/jazz/live-session-mutations"
 import { LiveSession, PlaydeckAccount } from "@/features/jazz/schema"
 import { PresentRevealLoader } from "@/features/slides/present-reveal-loader"
@@ -69,6 +73,9 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
       question_submissions: { $each: true },
       question_states: { $each: true },
       teams: { $each: true },
+      battle_state: {
+        round_summary: { entries: { $each: true } },
+      },
     },
   })
 
@@ -279,6 +286,55 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     [me, liveSessionSub],
   )
 
+  const handleResetBattleRound = useCallback(() => {
+    if (!me.$isLoaded) return
+    const session = liveSessionSub.$isLoaded
+      ? liveSessionSub
+      : liveSessionRef.current
+    if (!session) return
+    assertLoaded(me)
+    resetBattleTargetSelection(me, session)
+  }, [me, liveSessionSub])
+
+  const handleShowBattleLog = useCallback(() => {
+    if (!me.$isLoaded) return
+    const session = liveSessionSub.$isLoaded
+      ? liveSessionSub
+      : liveSessionRef.current
+    if (!session) return
+    assertLoaded(me)
+    const result = showBattleLog(me, session)
+    if (!result.ok) {
+      window.alert(result.error)
+    }
+  }, [me, liveSessionSub])
+
+  const handleShowPodium = useCallback(() => {
+    if (!me.$isLoaded) return
+    const session = liveSessionSub.$isLoaded
+      ? liveSessionSub
+      : liveSessionRef.current
+    if (!session) return
+    assertLoaded(me)
+    const result = showPodium(me, session)
+    if (!result.ok) {
+      window.alert(result.error)
+    }
+  }, [me, liveSessionSub])
+
+  const handleLeaveBattleRoyaleAfterPodium = useCallback(() => {
+    if (!me.$isLoaded) return
+    const session = liveSessionSub.$isLoaded
+      ? liveSessionSub
+      : liveSessionRef.current
+    if (!session) return
+    assertLoaded(me)
+    const result = leaveBattleRoyaleAfterPodium(me, session)
+    if (!result.ok) {
+      window.alert(result.error)
+    }
+  }, [me, liveSessionSub])
+
   const handleEndLive = useCallback(() => {
     tearDownLiveSession({ keepalive: false })
     setJoinCode(null)
@@ -356,6 +412,10 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
         onAutoAssignTeams: handleAutoAssignTeams,
         onStartGameStore: handleStartGameStore,
         onStartGameplay: handleStartGameplay,
+        onResetBattleRound: handleResetBattleRound,
+        onShowBattleLog: handleShowBattleLog,
+        onShowPodium: handleShowPodium,
+        onLeaveBattleRoyaleAfterPodium: handleLeaveBattleRoyaleAfterPodium,
       }}
     />
   )
