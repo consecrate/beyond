@@ -21,8 +21,9 @@ export function useJazzImages(
   /**
    * Pass a content-derived key (e.g. the HTML string being rendered) so the
    * hook re-runs when the rendered HTML changes and new jazz images appear.
+   * Defaults to "" — always present so the dep array never changes size.
    */
-  contentKey?: string,
+  contentKey: string = "",
 ) {
   const objectUrlsRef = useRef<string[]>([])
 
