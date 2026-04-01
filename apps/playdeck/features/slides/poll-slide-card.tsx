@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState, type CSSProperties } from "react"
 
 import type { PollBlock } from "@/features/decks/parse-slide-poll"
 import { slideMarkdownToSafeHtml } from "@/features/decks/render-slide-markdown"
@@ -19,6 +19,42 @@ function InlineMd({ markdown, className }: { markdown: string; className?: strin
 function formatPollPercent(frac: number): string {
   if (frac <= 0) return "0%"
   return `${(frac * 100).toFixed(1)}%`
+}
+
+/**
+ * Random vote shares for preview mockups; always sums to 1 (100%).
+ * Uses uniform random weights then normalizes (avoids Dirichlet edge cases).
+ */
+function randomVoteSharesSummingToOne(optionCount: number): number[] {
+  if (optionCount <= 0) return []
+  const raw = Array.from({ length: optionCount }, () => Math.random())
+  const sum = raw.reduce((a, b) => a + b, 0)
+  if (sum <= 0) return Array.from({ length: optionCount }, () => 1 / optionCount)
+  return raw.map((x) => x / sum)
+}
+
+/** Vote share from real counts, or preview-only fake shares; live modes show 0% until votes exist. */
+function pollFraction(
+  counts: readonly number[],
+  index: number,
+  totalVotes: number,
+  variant: PollSlideVariant,
+  optionCount: number,
+  previewShares: readonly number[] | null,
+): number {
+  if (totalVotes > 0) return (counts[index] ?? 0) / totalVotes
+  if (optionCount <= 0) return 0
+  if (variant === "preview" && previewShares != null && previewShares.length === optionCount) {
+    return previewShares[index] ?? 0
+  }
+  return 0
+}
+
+function ratioGradientStyle(frac: number): CSSProperties {
+  const pct = `${(frac * 100).toFixed(1)}%`
+  return {
+    background: `linear-gradient(to right, color-mix(in srgb, var(--primary) 15%, transparent) ${pct}, transparent ${pct})`,
+  }
 }
 
 export type PollSlideVariant = "preview" | "audience" | "presenter"
@@ -62,7 +98,6 @@ function OverlayPollOptionRow({
   selected,
   onSelect,
   frac,
-  voteCount,
   isWinner,
   myPick,
 }: {
@@ -74,16 +109,13 @@ function OverlayPollOptionRow({
   selected: boolean
   onSelect: () => void
   frac: number
-  voteCount: number
   isWinner: boolean
   myPick: boolean
 }) {
-  const showRatioFill = mode === "results"
-
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-none border border-border/90 transition-colors",
+        "overflow-hidden rounded-none border border-border/90 transition-colors",
         mode === "selecting" &&
         "bg-card/70 hover:border-ring/50 hover:bg-muted/25",
         mode === "selecting" &&
@@ -93,50 +125,23 @@ function OverlayPollOptionRow({
         mode === "results" && myPick && "border-primary ring-2 ring-primary/40",
       )}
     >
-      {showRatioFill ? (
-        <div
-          className={cn(
-            "pointer-events-none absolute bottom-0 left-0 top-0 transition-[width] duration-500 ease-out",
-            "rounded-none",
-            isWinner ? "bg-primary/35" : "bg-muted/55",
-          )}
-          style={{ width: `${frac * 100}%` }}
-          aria-hidden
-        />
-      ) : null}
-      <div className="relative z-10 min-h-0">
-        {mode === "selecting" ? (
-          <label htmlFor={id} className="flex cursor-pointer gap-3 px-4 py-4">
-            <input
-              type="radio"
-              id={id}
-              name={name}
-              checked={selected}
-              onChange={onSelect}
-              className="mt-1 size-4 shrink-0 accent-primary"
-            />
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="text-base leading-snug">
-                <InlineMd
-                  markdown={optionMarkdown}
-                  className="[&_p]:mb-0 [&_p]:inline"
-                />
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted/80">
-                <div
-                  className="h-full rounded-full bg-primary/80 transition-[width] duration-500 ease-out"
-                  style={{ width: `${frac * 100}%` }}
-                />
-              </div>
-              <div className="flex justify-end">
-                <span className="tabular-nums text-xs text-muted-foreground">
-                  {voteCount} {voteCount === 1 ? "response" : "responses"}
-                </span>
-              </div>
-            </div>
-          </label>
-        ) : (
-          <div className="flex gap-3 px-4 py-4">
+      {mode === "selecting" ? (
+        <label htmlFor={id} className="flex cursor-pointer gap-3 px-4 py-4">
+          <input
+            type="radio"
+            id={id}
+            name={name}
+            checked={selected}
+            onChange={onSelect}
+            className="mt-1 size-4 shrink-0 accent-primary"
+          />
+          <div className="min-w-0 flex-1 text-base leading-snug">
+            <InlineMd markdown={optionMarkdown} className="[&_p]:mb-0 [&_p]:inline" />
+          </div>
+        </label>
+      ) : (
+        <div className="px-4 py-4" style={ratioGradientStyle(frac)}>
+          <div className="flex gap-3">
             <span
               className={cn(
                 "mt-1 w-4 shrink-0 text-center text-xs font-medium tabular-nums text-muted-foreground",
@@ -160,15 +165,15 @@ function OverlayPollOptionRow({
             </div>
             <span
               className={cn(
-                "shrink-0 tabular-nums text-sm text-muted-foreground",
+                "shrink-0 self-start tabular-nums text-sm text-muted-foreground",
                 isWinner && "font-semibold text-foreground",
               )}
             >
               {formatPollPercent(frac)}
             </span>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -203,6 +208,15 @@ export function PollSlideCard({
 }) {
   const [selected, setSelected] = useState<number | null>(null)
   const totalVotes = counts.reduce((a, b) => a + b, 0)
+  const previewShares = useMemo(
+    () => {
+      if (variant !== "preview") return null
+      return randomVoteSharesSummingToOne(block.options.length)
+    },
+    // block.pollKey encodes prompt/title/options; length alone misses prompt-only edits
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- need pollKey + variant, not block.options.length
+    [variant, block.pollKey],
+  )
   const canVote = variant === "audience"
   const showPollRadios = canVote && myVote == null && !pollClosed
   const showVoteButton = showPollRadios && selected != null
@@ -394,11 +408,19 @@ export function PollSlideCard({
           {block.options.map((opt, i) => {
             const id = `${name}-opt-${i}`
             const n = counts[i] ?? 0
-            const frac = totalVotes > 0 ? n / totalVotes : 0
+            const optionCount = block.options.length
+            const frac = pollFraction(
+              counts,
+              i,
+              totalVotes,
+              variant,
+              optionCount,
+              previewShares,
+            )
             const isWinner = totalVotes > 0 && n === maxCount && maxCount > 0
             const myPick = variant === "audience" && myVote === i
             return (
-              <li key={i} className="space-y-1.5">
+              <li key={i}>
                 {overlay ? (
                   <OverlayPollOptionRow
                     id={id}
@@ -409,49 +431,70 @@ export function PollSlideCard({
                     selected={selected === i}
                     onSelect={() => setSelected(i)}
                     frac={frac}
-                    voteCount={n}
                     isWinner={isWinner}
                     myPick={myPick}
                   />
-                ) : (
-                  <div className="flex gap-2">
-                    {showPollRadios ? (
+                ) : showPollRadios ? (
+                  <div
+                    className={cn(
+                      "overflow-hidden rounded-lg border border-border/70 transition-colors",
+                      "hover:border-ring/50 hover:bg-muted/25",
+                      selected === i && "border-primary ring-2 ring-primary/35 bg-muted/20",
+                    )}
+                  >
+                    <label htmlFor={id} className="flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm">
                       <input
                         type="radio"
                         id={id}
                         name={name}
                         checked={selected === i}
                         onChange={() => setSelected(i)}
-                        className="mt-1.5 size-4 shrink-0 accent-foreground"
+                        className="mt-0.5 size-4 shrink-0 accent-foreground"
                       />
-                    ) : null}
-                    <div
-                      className={cn(
-                        "min-w-0 flex-1 space-y-1",
-                        showPollRadios &&
-                        selected === i &&
-                        "rounded-none ring-2 ring-primary/40",
-                      )}
-                    >
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="w-5 shrink-0 font-medium tabular-nums text-muted-foreground">
-                          {i + 1}.
-                        </span>
-                        <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1">
+                        <InlineMd
+                          markdown={opt}
+                          className="inline [&_p]:mb-0 [&_p]:inline"
+                        />
+                      </div>
+                    </label>
+                  </div>
+                ) : (
+                  <div
+                    className={cn(
+                      "overflow-hidden rounded-none border border-border/70 px-3 py-2.5",
+                      isWinner && "border-primary/50",
+                      myPick && "ring-2 ring-primary/40",
+                    )}
+                    style={ratioGradientStyle(frac)}
+                  >
+                    <div className="flex items-start gap-2 text-sm">
+                      <span
+                        className={cn(
+                          "w-5 shrink-0 text-center font-medium tabular-nums text-muted-foreground",
+                          isWinner && "text-foreground",
+                        )}
+                      >
+                        {i + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
                           <InlineMd
                             markdown={opt}
-                            className="inline [&_p]:mb-0 [&_p]:inline"
+                            className={cn(
+                              "inline [&_p]:mb-0 [&_p]:inline",
+                              isWinner && "font-semibold",
+                            )}
                           />
+                          <span
+                            className={cn(
+                              "shrink-0 tabular-nums text-xs text-muted-foreground",
+                              isWinner && "font-semibold text-foreground",
+                            )}
+                          >
+                            {formatPollPercent(frac)}
+                          </span>
                         </div>
-                        <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                          {n}
-                        </span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-muted/80 pl-7">
-                        <div
-                          className="h-full rounded-full bg-primary/80 transition-[width] duration-500 ease-out"
-                          style={{ width: `${frac * 100}%` }}
-                        />
                       </div>
                     </div>
                   </div>
