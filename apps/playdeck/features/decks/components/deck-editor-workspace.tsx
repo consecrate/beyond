@@ -15,6 +15,7 @@ import { PlaydeckAccount } from "@/features/jazz/schema"
 import { replaceSlidesFromMarkdown } from "@/features/decks/jazz-deck-mutations"
 import type { DeckSlideView } from "@/features/decks/deck-types"
 import { appendPollSlideMarkdown } from "@/features/decks/parse-slide-poll"
+import { appendQuestionSlideMarkdown } from "@/features/decks/parse-slide-question"
 import {
   deckSlidesToRevealModels,
   markdownMatchesSlides,
@@ -125,7 +126,12 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
   const slidesContentKey = useMemo(
     () =>
       JSON.stringify(
-        revealModels.map((s) => [s.html, s.poll?.pollKey ?? null]),
+        revealModels.map((s) => [
+          s.html,
+          s.poll?.pollKey ?? null,
+          s.question?.questionKey ?? null,
+          s.interactiveError?.message ?? null,
+        ]),
       ),
     [revealModels],
   )
@@ -143,10 +149,10 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
   const statusMessage = error
     ? null
     : pending
-      ? "Saving…"
+      ? "Syncing…"
       : isDirty
-        ? "Unsaved changes"
-        : "Saved"
+        ? "Draft unsaved"
+        : "Changes saved"
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
@@ -179,9 +185,17 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
             type="button"
             variant="outline"
             size="sm"
+            onClick={() => setMarkdown((m) => appendQuestionSlideMarkdown(m))}
+          >
+            New Question (MCQ)
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => setMarkdown((m) => appendPollSlideMarkdown(m))}
           >
-            Add poll slide
+            New Poll
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={addSlide}>
             Add slide

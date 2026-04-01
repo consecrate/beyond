@@ -14,7 +14,9 @@ import { presenterRevealSlidesFromSources } from "@/features/decks/slide-markdow
 import {
   closePoll,
   endLiveSession,
+  startQuestion,
   startLiveSession,
+  stopQuestion,
   updateLiveSlideIndex,
 } from "@/features/jazz/live-session-mutations"
 import { LiveSession, PlaydeckAccount } from "@/features/jazz/schema"
@@ -52,7 +54,12 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
   const [liveSessionId, setLiveSessionId] = useState<string | null>(null)
 
   const liveSessionSub = useCoState(LiveSession, liveSessionId ?? undefined, {
-    resolve: { poll_votes: { $each: true }, closed_poll_keys: true },
+    resolve: {
+      poll_votes: { $each: true },
+      closed_poll_keys: true,
+      question_submissions: { $each: true },
+      question_states: { $each: true },
+    },
   })
 
   useEffect(() => {
@@ -75,7 +82,7 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
           method: "DELETE",
           ...(opts.keepalive ? { keepalive: true as const } : {}),
         },
-      ).catch(() => {})
+      ).catch(() => { })
     }
   }, [])
 
@@ -134,6 +141,38 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
       assertLoaded(me)
       const r = closePoll(me, liveSessionSub, pollKey)
       if (!r.ok) window.alert(r.error)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleStartQuestion = useCallback(
+    (questionKey: string) => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded
+        ? liveSessionSub
+        : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      const result = startQuestion(me, session, questionKey)
+      if (!result.ok) {
+        window.alert(result.error)
+      }
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleStopQuestion = useCallback(
+    (questionKey: string) => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded
+        ? liveSessionSub
+        : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      const result = stopQuestion(me, session, questionKey)
+      if (!result.ok) {
+        window.alert(result.error)
+      }
     },
     [me, liveSessionSub],
   )
@@ -205,6 +244,8 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
         onSlideIndexSync: handleSlideIndexSync,
         liveSession: liveSessionResolved,
         onClosePoll: handleClosePoll,
+        onStartQuestion: handleStartQuestion,
+        onStopQuestion: handleStopQuestion,
       }}
     />
   )

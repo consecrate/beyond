@@ -12,13 +12,20 @@ import type { RevealApi } from "reveal.js"
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
   aggregatePollCounts,
+  aggregateQuestionCounts,
+  countQuestionAnswers,
   isPollClosed,
   myPollVote,
+  myQuestionAnswer,
+  questionStatus,
+  submitQuestionAnswer,
   upsertPollVote,
 } from "@/features/jazz/live-session-mutations"
 import { PlaydeckAccount, type LiveSession } from "@/features/jazz/schema"
 import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
+import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
+import { QuestionSlideCard } from "@/features/slides/question-slide-card"
 
 import "reveal.js/reveal.css"
 import "reveal.js/theme/black.css"
@@ -42,6 +49,11 @@ export function LiveRevealFollower({
   const me = useAccount(PlaydeckAccount)
   const [voteError, setVoteError] = useState<string | null>(null)
   const [votePending, startVote] = useTransition()
+  const [questionErrorState, setQuestionErrorState] = useState<{
+    questionKey: string | null
+    message: string | null
+  }>({ questionKey: null, message: null })
+  const [questionPending, startQuestionSubmit] = useTransition()
   const [loadError, setLoadError] = useState<string | null>(null)
   /** Must match Reveal's current slide for RevealSlideBody lazy window (not only Jazz index). */
   const [revealIndex, setRevealIndex] = useState(0)
@@ -51,6 +63,12 @@ export function LiveRevealFollower({
   const deckApiRef = useRef<RevealApi | null>(null)
   const activeSlideIndexRef = useRef(activeSlideIndex)
   const numSlides = slides.length
+  const activeQuestionKey = slides[revealIndex]?.question?.questionKey ?? null
+  const questionError =
+    activeQuestionKey != null &&
+      questionErrorState.questionKey === activeQuestionKey
+      ? questionErrorState.message
+      : null
 
   const userId = me.$isLoaded ? me.$jazz.id : ""
 
@@ -69,7 +87,7 @@ export function LiveRevealFollower({
       hash: false,
       controls: false,
       progress: true,
-      slideNumber: "c/t",
+      slideNumber: false,
       transition: "slide",
       backgroundTransition: "fade",
       width: 960,
@@ -152,10 +170,6 @@ export function LiveRevealFollower({
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{deckTitle}</p>
-          <p className="text-xs text-muted-foreground tabular-nums">
-            Live · slide {Math.min(activeSlideIndex + 1, numSlides)} /{" "}
-            {numSlides}
-          </p>
         </div>
       </header>
 
@@ -181,8 +195,7 @@ export function LiveRevealFollower({
                         data-background-color="#0d1117"
                       >
                         <RevealSlideBody
-                          html={slide.html}
-                          poll={slide.poll}
+                          slide={slide}
                           slideIndex={i}
                           activeIndex={revealIndex}
                         />
@@ -193,56 +206,145 @@ export function LiveRevealFollower({
               </div>
             </div>
 
-            {slides[revealIndex]?.poll ? (
+            {slides[revealIndex]?.interactiveError ? (
               <div
                 className="absolute inset-0 z-10 flex flex-col bg-background"
                 role="presentation"
               >
                 <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
                   <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
-                    <PollSlideCard
+                    <InteractiveErrorCard
                       layout="overlay"
-                      block={slides[revealIndex].poll!}
-                      variant="audience"
-                      counts={aggregatePollCounts(
-                        liveSession,
-                        slides[revealIndex].poll!.pollKey,
-                        slides[revealIndex].poll!.options.length,
-                      )}
-                      myVote={myPollVote(
-                        liveSession,
-                        userId,
-                        slides[revealIndex].poll!.pollKey,
-                      )}
-                      pollClosed={isPollClosed(
-                        liveSession,
-                        slides[revealIndex].poll!.pollKey,
-                      )}
-                      name={`join-poll-${sessionId}-${revealIndex}`}
-                      voteError={voteError}
-                      votePending={votePending}
-                      voteAccountReady={me.$isLoaded}
-                      onVote={(optionIndex) => {
-                        setVoteError(null)
-                        startVote(() => {
-                          if (!me.$isLoaded) {
-                            setVoteError(
-                              "Still connecting. Try again in a moment.",
-                            )
-                            return
-                          }
-                          assertLoaded(me)
-                          const r = upsertPollVote(me, liveSession, {
-                            pollKey: slides[revealIndex].poll!.pollKey,
-                            optionIndex,
-                            optionCount:
-                              slides[revealIndex].poll!.options.length,
-                          })
-                          if (!r.ok) setVoteError(r.error)
-                        })
-                      }}
+                      title={slides[revealIndex].title}
+                      message={slides[revealIndex].interactiveError!.message}
                     />
                   </div>
+                </div>
+              </div>
+            ) : null}
+
+            {slides[revealIndex]?.poll ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-0">
+                  <PollSlideCard
+                    layout="overlay"
+                    block={slides[revealIndex].poll!}
+                    variant="audience"
+                    counts={aggregatePollCounts(
+                      liveSession,
+                      slides[revealIndex].poll!.pollKey,
+                      slides[revealIndex].poll!.options.length,
+                    )}
+                    myVote={myPollVote(
+                      liveSession,
+                      userId,
+                      slides[revealIndex].poll!.pollKey,
+                    )}
+                    pollClosed={isPollClosed(
+                      liveSession,
+                      slides[revealIndex].poll!.pollKey,
+                    )}
+                    name={`join-poll-${sessionId}-${revealIndex}`}
+                    voteError={voteError}
+                    votePending={votePending}
+                    voteAccountReady={me.$isLoaded}
+                    onVote={(optionIndex) => {
+                      setVoteError(null)
+                      startVote(() => {
+                        if (!me.$isLoaded) {
+                          setVoteError(
+                            "Still connecting. Try again in a moment.",
+                          )
+                          return
+                        }
+                        assertLoaded(me)
+                        const r = upsertPollVote(me, liveSession, {
+                          pollKey: slides[revealIndex].poll!.pollKey,
+                          optionIndex,
+                          optionCount:
+                            slides[revealIndex].poll!.options.length,
+                        })
+                        if (!r.ok) setVoteError(r.error)
+                      })
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {slides[revealIndex]?.question ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-0">
+                  {(() => {
+                    const question = slides[revealIndex].question!
+                    const state = questionStatus(liveSession, question.questionKey)
+                    const resultsVisible =
+                      state === "revealed" && liveSession.status === "ended"
+                    const counts = resultsVisible
+                      ? aggregateQuestionCounts(
+                        liveSession,
+                        question.questionKey,
+                        question.options.length,
+                      )
+                      : Array.from({ length: question.options.length }, () => 0)
+
+                    return (
+                      <QuestionSlideCard
+                        layout="overlay"
+                        block={question}
+                        variant="audience"
+                        state={state}
+                        resultsVisible={resultsVisible}
+                        counts={counts}
+                        answeredCount={countQuestionAnswers(
+                          liveSession,
+                          question.questionKey,
+                        )}
+                        myAnswer={myQuestionAnswer(
+                          liveSession,
+                          userId,
+                          question.questionKey,
+                        )}
+                        audienceAccountId={userId}
+                        submitError={questionError}
+                        submitPending={questionPending}
+                        accountReady={me.$isLoaded}
+                        onSubmit={(optionIndex) => {
+                          setQuestionErrorState({
+                            questionKey: question.questionKey,
+                            message: null,
+                          })
+                          startQuestionSubmit(() => {
+                            if (!me.$isLoaded) {
+                              setQuestionErrorState({
+                                questionKey: question.questionKey,
+                                message: "Still connecting. Try again in a moment.",
+                              })
+                              return
+                            }
+                            assertLoaded(me)
+                            const result = submitQuestionAnswer(me, liveSession, {
+                              questionKey: question.questionKey,
+                              optionIndex,
+                              optionCount: question.options.length,
+                            })
+                            if (!result.ok) {
+                              setQuestionErrorState({
+                                questionKey: question.questionKey,
+                                message: result.error,
+                              })
+                            }
+                          })
+                        }}
+                      />
+                    )
+                  })()}
                 </div>
               </div>
             ) : null}

@@ -3,6 +3,7 @@ import {
   computePollKey,
   tryParsePollFromSlideBody,
 } from "@/features/decks/parse-slide-poll"
+import { parseQuestionSlideBody } from "@/features/decks/parse-slide-question"
 import { slideMarkdownToSafeHtml } from "@/features/decks/render-slide-markdown"
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 
@@ -102,12 +103,39 @@ export function deckSlidesToRevealModels(
   slides: ParsedSlide[],
 ): RevealSlideModel[] {
   return slides.map((s) => {
+    const question = parseQuestionSlideBody({
+      slideTitle: s.title,
+      body: s.body,
+    })
+
+    if (question.kind === "invalid-question") {
+      return {
+        title: s.title,
+        html: "",
+        poll: null,
+        question: null,
+        interactiveError: question.block,
+      }
+    }
+
+    if (question.kind === "question") {
+      return {
+        title: s.title,
+        html: "",
+        poll: null,
+        question: question.block,
+        interactiveError: null,
+      }
+    }
+
     const raw = tryParsePollFromSlideBody(s.body)
     if (!raw) {
       return {
         title: s.title,
         html: slideMarkdownToSafeHtml(s.body),
         poll: null,
+        question: null,
+        interactiveError: null,
       }
     }
     const mergedTitle =
@@ -127,6 +155,8 @@ export function deckSlidesToRevealModels(
       title: s.title,
       html: "",
       poll,
+      question: null,
+      interactiveError: null,
     }
   })
 }

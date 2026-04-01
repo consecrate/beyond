@@ -9,8 +9,10 @@ import {
 } from "react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
+import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
+import { QuestionSlideCard } from "@/features/slides/question-slide-card"
 import { Button, cn } from "@beyond/design-system"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import Reveal from "reveal.js"
@@ -182,8 +184,7 @@ export function DeckRevealPreview({
                       data-background-color="#0d1117"
                     >
                       <RevealSlideBody
-                        html={slide.html}
-                        poll={slide.poll}
+                        slide={slide}
                         slideIndex={i}
                         activeIndex={activeIndex}
                       />
@@ -192,6 +193,23 @@ export function DeckRevealPreview({
                 </div>
               </div>
             </div>
+
+            {slides[activeIndex]?.interactiveError ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
+                    <InteractiveErrorCard
+                      layout="overlay"
+                      title={slides[activeIndex].title}
+                      message={slides[activeIndex].interactiveError!.message}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {slides[activeIndex]?.poll ? (
               <div
@@ -212,6 +230,32 @@ export function DeckRevealPreview({
                       )}
                       myVote={null}
                       name={`preview-poll-${activeIndex}`}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {slides[activeIndex]?.question ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center">
+                    <QuestionSlideCard
+                      layout="overlay"
+                      block={slides[activeIndex].question!}
+                      variant="preview"
+                      state="idle"
+                      counts={Array.from(
+                        {
+                          length: slides[activeIndex].question!.options.length,
+                        },
+                        () => 0,
+                      )}
+                      answeredCount={0}
+                      myAnswer={null}
                     />
                   </div>
                 </div>
