@@ -1,10 +1,13 @@
 "use client"
 
-import { useMemo, useState, type CSSProperties } from "react"
+import { useMemo, useRef, useState, type CSSProperties } from "react"
 
 import type { PollBlock } from "@/features/decks/parse-slide-poll"
 import { slideMarkdownToSafeHtml } from "@/features/decks/render-slide-markdown"
+import { PlaydeckAccount } from "@/features/jazz/schema"
+import { useJazzImages } from "@/features/slides/use-jazz-images"
 import { Button, cn } from "@beyond/design-system"
+import { useAccount } from "jazz-tools/react"
 
 function InlineMd({ markdown, className }: { markdown: string; className?: string }) {
   const html = slideMarkdownToSafeHtml(markdown)
@@ -72,6 +75,11 @@ const theaterPromptProseClass =
 
 function AudienceTheaterPollPrompt({ block }: { block: PollBlock }) {
   const html = slideMarkdownToSafeHtml(block.prompt)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const me = useAccount(PlaydeckAccount, {
+    select: (account) => (account.$isLoaded ? account : null),
+  })
+  useJazzImages(containerRef, me)
 
   return (
     <div
@@ -82,6 +90,7 @@ function AudienceTheaterPollPrompt({ block }: { block: PollBlock }) {
       )}
     >
       <div
+        ref={containerRef}
         className={theaterPromptProseClass}
         dangerouslySetInnerHTML={{ __html: html }}
       />
@@ -208,6 +217,11 @@ export function PollSlideCard({
 }) {
   const [selected, setSelected] = useState<number | null>(null)
   const totalVotes = counts.reduce((a, b) => a + b, 0)
+  const promptRef = useRef<HTMLDivElement>(null)
+  const me = useAccount(PlaydeckAccount, {
+    select: (account) => (account.$isLoaded ? account : null),
+  })
+  useJazzImages(promptRef, me)
   const previewShares = useMemo(
     () => {
       if (variant !== "preview") return null
@@ -397,6 +411,7 @@ export function PollSlideCard({
           )}
         >
           <div
+            ref={promptRef}
             className={cn(
               "prose prose-invert max-w-none prose-p:leading-relaxed",
               overlay && "prose-p:text-2xl prose-p:font-medium md:prose-p:text-3xl",
