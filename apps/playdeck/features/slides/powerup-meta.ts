@@ -25,11 +25,17 @@ export const POWERUP_CATALOG: readonly PowerupCatalogEntry[] = [
     desc: "Deal 2 HP instead of 1.",
     cost: 40,
   },
+  {
+    type: "step_up",
+    name: "Step Up",
+    desc: "Increase your team's HP by 1.",
+    cost: 30,
+  },
   { type: "deflect", name: "Deflect", desc: "Bounce damage back to attacker.", cost: 50 },
   {
     type: "critical_hit",
     name: "Critical Hit",
-    desc: "Deals 3 HP if 100% accuracy.",
+    desc: "Deals 3 HP when every teammate answers correctly (100% accuracy).",
     cost: 60,
   },
 ] as const

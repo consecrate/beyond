@@ -913,7 +913,7 @@ export function DeckRevealPresenter({
                                              <h3 className="text-2xl font-bold">{t.name}</h3>
                                              <div className="flex items-center gap-2">
                                                 <div className="flex items-center gap-1.5 rounded-full bg-red-500/20 px-3 py-1 text-sm font-bold text-red-500">
-                                                   ❤️ {t.hp ?? 20}
+                                                   ❤️ {t.hp ?? 10}
                                                 </div>
                                                 <div className="flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-sm font-bold text-amber-500">
                                                    <Star className="h-4 w-4 fill-amber-500" />

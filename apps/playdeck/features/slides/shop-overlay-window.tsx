@@ -21,7 +21,8 @@ export type PowerupStoreCatalogProps = {
   canPurchase: boolean
   /** Optional banner when purchases are disabled (wrong role or wrong phase). */
   readOnlyNotice: string | null
-  myTeam: Loaded<typeof Team> | undefined
+  /** Current viewer's personal PlayPoints (purchases debit this, not the team pool). */
+  myPlayPoints: number
   teamPowerups: Loaded<typeof Powerup>[]
   liveSession: Loaded<typeof LiveSession>
   buyError: string | null
@@ -34,7 +35,7 @@ export type PowerupStoreCatalogProps = {
 export function PowerupStoreCatalog({
   canPurchase,
   readOnlyNotice,
-  myTeam,
+  myPlayPoints,
   teamPowerups,
   liveSession,
   buyError,
@@ -42,7 +43,6 @@ export function PowerupStoreCatalog({
   onBuy,
   variant,
 }: PowerupStoreCatalogProps) {
-  const banked = myTeam?.banked_play_points ?? 0
   const isEmbed = variant === "embed"
 
   const resolveMember = (accountId: string): Loaded<typeof SessionPlayer> | undefined => {
@@ -83,9 +83,9 @@ export function PowerupStoreCatalog({
       <div className={cn("flex items-center gap-4", !isEmbed && "mb-4")}>
         <div className="flex items-center gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-6 py-3">
           <Star className="h-6 w-6 text-amber-500 fill-amber-500" />
-          <span className="text-2xl font-bold text-amber-500">{banked}</span>
+          <span className="text-2xl font-bold text-amber-500">{myPlayPoints}</span>
           <span className="ml-1 mt-1 text-sm font-semibold uppercase tracking-widest text-amber-500 opacity-70">
-            PlayPoints
+            Your PP
           </span>
         </div>
       </div>
@@ -103,7 +103,7 @@ export function PowerupStoreCatalog({
         )}
       >
         {POWERUP_CATALOG.map((pu) => {
-          const canAfford = banked >= pu.cost
+          const canAfford = myPlayPoints >= pu.cost
           const disabled = buyPending || !canPurchase || !canAfford
           return (
             <button
@@ -138,7 +138,7 @@ export function PowerupStoreCatalog({
       {teamPowerups.length > 0 ? (
         <div className="mt-2 w-full rounded-2xl border border-border bg-card/50 p-6">
           <h3 className="mb-4 text-sm font-bold uppercase tracking-widest opacity-70">
-            Acquired Inventory (Randomly Assigned)
+            Team inventory
           </h3>
           <div className="flex flex-wrap gap-2">
             {teamPowerups.map((pu, i) => {
@@ -168,7 +168,7 @@ export type ShopOverlayWindowProps = {
   onOpenChange: (open: boolean) => void
   gamePhase: string
   hasTeam: boolean
-  isTeamLeader: boolean
+  myPlayPoints: number
   myTeam: Loaded<typeof Team> | undefined
   teamPowerups: Loaded<typeof Powerup>[]
   liveSession: Loaded<typeof LiveSession>
@@ -182,7 +182,7 @@ export function ShopOverlayWindow({
   onOpenChange,
   gamePhase,
   hasTeam,
-  isTeamLeader,
+  myPlayPoints,
   myTeam,
   teamPowerups,
   liveSession,
@@ -191,12 +191,10 @@ export function ShopOverlayWindow({
   onBuy,
 }: ShopOverlayWindowProps) {
   const inStorePhase = gamePhase === "store"
-  const canPurchase = hasTeam && isTeamLeader && inStorePhase
+  const canPurchase = hasTeam && inStorePhase
   let readOnlyNotice: string | null = null
   if (!hasTeam) {
     readOnlyNotice = "Join a team to use the shop."
-  } else if (!isTeamLeader) {
-    readOnlyNotice = "Only the team leader can purchase powerups."
   } else if (!inStorePhase) {
     readOnlyNotice = "Purchases are only available during the store phase."
   }
@@ -210,7 +208,7 @@ export function ShopOverlayWindow({
         <DialogHeader>
           <DialogTitle>Shop</DialogTitle>
           <DialogDescription>
-            Team powerups and PlayPoints pool. Leaders can buy when the session is in the store phase.
+            Buy with your own PlayPoints during the store phase. Items go to your inventory.
           </DialogDescription>
         </DialogHeader>
         {hasTeam && myTeam ? (
@@ -218,7 +216,7 @@ export function ShopOverlayWindow({
             variant="embed"
             canPurchase={canPurchase}
             readOnlyNotice={readOnlyNotice}
-            myTeam={myTeam}
+            myPlayPoints={myPlayPoints}
             teamPowerups={teamPowerups}
             liveSession={liveSession}
             buyError={buyError}

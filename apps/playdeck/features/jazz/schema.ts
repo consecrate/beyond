@@ -37,9 +37,10 @@ export const PowerupType = z.union([
   z.literal("medkit"),
   z.literal("critical_hit"),
   z.literal("healing_potion"),
+  z.literal("step_up"),
 ])
 
-/** One team's round-scoped power-up claim (pending until leader confirms). */
+/** One member's round-scoped power-up activation (confirmed when chosen; no leader approval). */
 export const BattlePowerupSelection = co.map({
   team_id: z.string(),
   powerup_type: PowerupType,
@@ -51,7 +52,7 @@ export const BattlePowerupSelection = co.map({
 
 export const Powerup = co.map({
   type: PowerupType,
-  owner_account_id: z.string(), // Specifically assigned to a member via random distribution
+  owner_account_id: z.string(),
   is_used: z.boolean(),
 })
 
@@ -62,7 +63,7 @@ export const Team = co.map({
   leader_account_id: z.string().optional(),
   hp: z.number().optional(),
   status: z.union([z.literal("active"), z.literal("downed")]).optional(),
-  banked_play_points: z.number().optional(), // Pool accumulated from members, used by leader at the start
+  banked_play_points: z.number().optional(), // Sum of member play points at store entry (display / legacy)
   powerups: co.list(Powerup).optional(),
 })
 

@@ -59,7 +59,7 @@ export function InventoryOverlayWindow({
             Inventory
           </DialogTitle>
           <DialogDescription>
-            Your powerups and your team&apos;s acquired items.
+            Powerups you bought with your PlayPoints, plus your team overview.
           </DialogDescription>
         </DialogHeader>
 

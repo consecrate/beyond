@@ -360,7 +360,7 @@ export function LiveRevealFollower({
         onOpenChange={setShopOpen}
         gamePhase={gamePhase}
         hasTeam={Boolean(myPlayerRecord?.team_id)}
-        isTeamLeader={isTeamLeader}
+        myPlayPoints={playPoints}
         myTeam={myTeam}
         teamPowerups={teamPowerups}
         liveSession={liveSession}
@@ -419,7 +419,7 @@ export function LiveRevealFollower({
                   return (
                      <div className="absolute top-4 left-4 z-40 flex flex-col gap-2 pointer-events-none">
                         <div className="flex items-center gap-2 rounded-full border border-border/40 bg-background/80 px-3 py-1.5 shadow-sm backdrop-blur-md">
-                           <span className="text-red-500 font-bold flex items-center gap-1.5"><Star className="h-4 w-4 fill-amber-500 text-amber-500 hidden" /> ❤️ {myTeam?.hp ?? 20}</span>
+                           <span className="text-red-500 font-bold flex items-center gap-1.5"><Star className="h-4 w-4 fill-amber-500 text-amber-500 hidden" /> ❤️ {myTeam?.hp ?? 10}</span>
                            <div className="w-px h-3 bg-border" />
                            <span className="flex items-center gap-1 text-sm font-semibold opacity-80">{myTeam?.name}</span>
                         </div>
@@ -442,62 +442,19 @@ export function LiveRevealFollower({
                }
                
                if (gamePhase === "store" && myPlayerRecord?.team_id) {
-                  if (isTeamLeader) {
-                     return (
-                        <div className="absolute inset-0 z-50 flex flex-col overflow-auto bg-background p-4 md:p-8 duration-500 animate-in fade-in zoom-in-95" role="presentation">
-                           <PowerupStoreCatalog
-                              variant="fullscreen"
-                              canPurchase
-                              readOnlyNotice={null}
-                              myTeam={myTeam}
-                              teamPowerups={teamPowerups}
-                              liveSession={liveSession}
-                              buyError={buyError}
-                              buyPending={buyPending}
-                              onBuy={handleBuyPowerup}
-                           />
-                        </div>
-                     )
-                  }
-                  
-                  // Regular Member Waiting View
                   return (
-                     <div className="absolute inset-0 z-50 flex flex-col bg-background/95 backdrop-blur-md p-6 overflow-auto animate-in fade-in duration-500" role="presentation">
-                        <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center items-center text-center">
-                           <div className="w-16 h-16 rounded-2xl bg-amber-500/20 flex items-center justify-center mb-6 animate-pulse">
-                              <Star className="h-8 w-8 text-amber-500 fill-amber-500" />
-                           </div>
-                           <h2 className="text-3xl font-black uppercase tracking-widest mb-3">Gearing Up</h2>
-                           <p className="text-lg text-muted-foreground max-w-md">Your Team Leader is currently at the store supplying the team.</p>
-                           
-                           <div className="w-full mt-12 bg-card rounded-2xl p-6 border border-border text-left shadow-xl h-64 overflow-y-auto">
-                              <h3 className="text-xs font-bold uppercase tracking-wider opacity-50 mb-4 sticky top-0 bg-card z-10 py-1">Live Feed</h3>
-                              {teamPowerups.length === 0 ? (
-                                 <p className="text-sm italic opacity-50 flex items-center h-20">Waiting for purchases...</p>
-                              ) : (
-                                 <div className="flex flex-col gap-3">
-                                    {teamPowerups.map((pu, i) => {
-                                       const member = liveSession.joined_players && liveSession.joined_players.$isLoaded ? Array.from(liveSession.joined_players).find(p => p && p.$isLoaded && p.account_id === pu.owner_account_id) as Loaded<typeof SessionPlayer> | undefined : null
-                                       const isMe = pu.owner_account_id === userId
-                                       return (
-                                          <div key={i} className={cn("flex items-center justify-between p-3 rounded-xl border animate-in slide-in-from-bottom-4 fade-in duration-300", isMe ? "border-primary/50 bg-primary/10" : "border-border bg-background")}>
-                                             <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                                                   <Star className="h-4 w-4 opacity-50" />
-                                                </div>
-                                                <span className="font-semibold capitalize text-sm">{formatPowerupLabel(pu.type)}</span>
-                                             </div>
-                                             <div className="flex items-center gap-1.5 text-sm">
-                                                <span className="opacity-50">Received by</span>
-                                                <span className={cn("font-bold px-2 py-0.5 rounded-md", isMe ? "bg-primary text-primary-foreground" : "bg-muted")}>{isMe ? "YOU" : (member ? member.name : "Member")}</span>
-                                             </div>
-                                          </div>
-                                       )
-                                    })}
-                                 </div>
-                              )}
-                           </div>
-                        </div>
+                     <div className="absolute inset-0 z-50 flex flex-col overflow-auto bg-background p-4 md:p-8 duration-500 animate-in fade-in zoom-in-95" role="presentation">
+                        <PowerupStoreCatalog
+                           variant="fullscreen"
+                           canPurchase
+                           readOnlyNotice={null}
+                           myPlayPoints={playPoints}
+                           teamPowerups={teamPowerups}
+                           liveSession={liveSession}
+                           buyError={buyError}
+                           buyPending={buyPending}
+                           onBuy={handleBuyPowerup}
+                        />
                      </div>
                   )
                }

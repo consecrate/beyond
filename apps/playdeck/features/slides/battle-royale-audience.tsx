@@ -210,8 +210,7 @@ export function BattleRoyaleAudience({
               Round power-up
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Target locked — choose a power-up from your inventory or wait for your leader to
-              confirm.
+              Target locked — tap a power-up you own in the grid below.
             </p>
           </div>
           <BattlePowerupRoundPanel

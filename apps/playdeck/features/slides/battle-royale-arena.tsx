@@ -19,6 +19,7 @@ function powerupLineForTeam(
 ): string | null {
   const list = battleState.powerup_selections
   if (!list?.$isLoaded) return null
+  const parts: string[] = []
   for (const s of list) {
     if (!s?.$isLoaded) continue
     if (s.team_id !== teamId) continue
@@ -26,11 +27,12 @@ function powerupLineForTeam(
     const mark = s.status === "confirmed" ? "✓" : "…"
     if (s.powerup_type === "healing_potion" && s.healing_target_team_id) {
       const ht = allTeams.find((x) => x.id === s.healing_target_team_id)
-      return `${mark} ${label}${ht ? ` → ${ht.name}` : ""}`
+      parts.push(`${mark} ${label}${ht ? ` → ${ht.name}` : ""}`)
+    } else {
+      parts.push(`${mark} ${label}`)
     }
-    return `${mark} ${label}`
   }
-  return null
+  return parts.length ? parts.join(" · ") : null
 }
 
 function TeamTotem({
