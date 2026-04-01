@@ -25,6 +25,8 @@ import {
   Loader2,
   Minimize2,
   Radio,
+  Users,
+  X,
 } from "lucide-react"
 import Link from "next/link"
 import Reveal from "reveal.js"
@@ -45,6 +47,8 @@ export type DeckLiveControls = {
   onClosePoll?: (pollKey: string) => void | Promise<void>
   onStartQuestion?: (questionKey: string) => void | Promise<void>
   onStopQuestion?: (questionKey: string) => void | Promise<void>
+  onSetLobbyVisible?: (visible: boolean) => void | Promise<void>
+  onKickPlayer?: (accountId: string) => void | Promise<void>
 }
 
 export type DeckRevealPresenterProps = {
@@ -451,6 +455,16 @@ export function DeckRevealPresenter({
                   </span>
                   <Button
                     type="button"
+                    variant={live.liveSession?.is_lobby_visible ? "default" : "secondary"}
+                    size="sm"
+                    className="ml-1"
+                    onClick={() => void live.onSetLobbyVisible?.(!live.liveSession?.is_lobby_visible)}
+                  >
+                    <Users className="mr-1.5 h-3.5 w-3.5" />
+                    Lobby
+                  </Button>
+                  <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     className="ml-1"
@@ -647,6 +661,56 @@ export function DeckRevealPresenter({
                       />
                     )}
                   </div>
+                </div>
+              </div>
+            ) : null}
+
+            {live?.isActive && live.liveSession?.is_lobby_visible ? (
+              <div className="absolute inset-0 z-50 flex flex-col bg-background/80 backdrop-blur-md">
+                <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto p-6 md:p-12">
+                  <div className="mb-12 text-center">
+                    <p className="mb-2 text-2xl font-medium tracking-tight text-muted-foreground sm:text-3xl">Go to <span className="text-foreground">playdeck.app</span> and enter code</p>
+                    <h1 className="text-8xl font-black tracking-tighter text-primary sm:text-[10rem]">{live.joinCode || "—"}</h1>
+                  </div>
+
+                  {(() => {
+                    const players = (live.liveSession.joined_players as unknown as any[]) || []
+                    return (
+                      <div className="w-full max-w-4xl">
+                        <div className="mb-6 flex items-center justify-between">
+                          <h2 className="text-xl font-semibold opacity-90">Players Joined</h2>
+                          <span className="rounded-full bg-primary/20 px-3 py-1 font-mono text-sm font-bold text-primary">
+                            {players.length}
+                          </span>
+                        </div>
+
+                        {players.length === 0 ? (
+                          <div className="flex h-32 items-center justify-center rounded-xl border-2 border-dashed border-muted bg-muted/10">
+                            <p className="animate-pulse text-muted-foreground">Waiting for players to join...</p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-3">
+                            {players.map((p: any, i: number) => (
+                              <div
+                                key={i}
+                                className="group relative flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium transition-all hover:pr-10"
+                              >
+                                <span>{p.name}</span>
+                                <button
+                                  onClick={() => void live.onKickPlayer?.(p.account_id)}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-muted p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive hover:text-white group-hover:opacity-100"
+                                  title="Kick Player"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+
                 </div>
               </div>
             ) : null}

@@ -18,6 +18,8 @@ import {
   startLiveSession,
   stopQuestion,
   updateLiveSlideIndex,
+  setLobbyVisible,
+  kickPlayer,
 } from "@/features/jazz/live-session-mutations"
 import { LiveSession, PlaydeckAccount } from "@/features/jazz/schema"
 import { PresentRevealLoader } from "@/features/slides/present-reveal-loader"
@@ -55,6 +57,7 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
 
   const liveSessionSub = useCoState(LiveSession, liveSessionId ?? undefined, {
     resolve: {
+      joined_players: { $each: true },
       poll_votes: { $each: true },
       closed_poll_keys: true,
       question_submissions: { $each: true },
@@ -177,6 +180,32 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     [me, liveSessionSub],
   )
 
+  const handleSetLobbyVisible = useCallback(
+    (visible: boolean) => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded
+        ? liveSessionSub
+        : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      setLobbyVisible(me, session, visible)
+    },
+    [me, liveSessionSub],
+  )
+
+  const handleKickPlayer = useCallback(
+    (accountId: string) => {
+      if (!me.$isLoaded) return
+      const session = liveSessionSub.$isLoaded
+        ? liveSessionSub
+        : liveSessionRef.current
+      if (!session) return
+      assertLoaded(me)
+      kickPlayer(me, session, accountId)
+    },
+    [me, liveSessionSub],
+  )
+
   const handleEndLive = useCallback(() => {
     tearDownLiveSession({ keepalive: false })
     setJoinCode(null)
@@ -246,6 +275,8 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
         onClosePoll: handleClosePoll,
         onStartQuestion: handleStartQuestion,
         onStopQuestion: handleStopQuestion,
+        onSetLobbyVisible: handleSetLobbyVisible,
+        onKickPlayer: handleKickPlayer,
       }}
     />
   )

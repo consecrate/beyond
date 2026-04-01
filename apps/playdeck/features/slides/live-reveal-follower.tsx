@@ -8,6 +8,8 @@ import { useAccount } from "jazz-tools/react"
 
 import Reveal from "reveal.js"
 import type { RevealApi } from "reveal.js"
+import { buttonVariants, cn } from "@beyond/design-system"
+import Link from "next/link"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
@@ -20,6 +22,7 @@ import {
   questionStatus,
   submitQuestionAnswer,
   upsertPollVote,
+  joinLiveSession,
 } from "@/features/jazz/live-session-mutations"
 import { PlaydeckAccount, type LiveSession } from "@/features/jazz/schema"
 import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
@@ -71,6 +74,32 @@ export function LiveRevealFollower({
       : null
 
   const userId = me.$isLoaded ? me.$jazz.id : ""
+
+  const [isKicked, setIsKicked] = useState(false)
+  const hasJoinedRef = useRef(false)
+
+  useEffect(() => {
+    if (!me.$isLoaded || !liveSession || !liveSession.joined_players) return
+
+    assertLoaded(liveSession.joined_players)
+    const playersArr = [...liveSession.joined_players]
+    const isCurrentlyIn = playersArr.some((p) => {
+      if (!p) return false
+      assertLoaded(p)
+      return p.account_id === me.$jazz.id
+    })
+
+    if (!hasJoinedRef.current) {
+      if (!isCurrentlyIn) {
+        joinLiveSession(me, liveSession)
+      }
+      hasJoinedRef.current = true
+    } else {
+      if (!isCurrentlyIn) {
+        setIsKicked(true)
+      }
+    }
+  }, [me, liveSession])
 
   useEffect(() => {
     activeSlideIndexRef.current = activeSlideIndex
@@ -156,6 +185,23 @@ export function LiveRevealFollower({
   useEffect(() => {
     deckApiRef.current?.layout()
   }, [slides.length])
+
+  if (isKicked) {
+    return (
+      <div className="flex min-h-svh flex-col items-center justify-center gap-4 bg-background p-6 text-center">
+        <h2 className="text-3xl font-bold tracking-tight text-primary">You have been kicked</h2>
+        <p className="max-w-sm text-sm text-muted-foreground mb-4">
+          The presenter has removed you from this session.
+        </p>
+        <Link
+          href="/"
+          className={cn(buttonVariants({ variant: "default" }))}
+        >
+          Return to Homepage
+        </Link>
+      </div>
+    )
+  }
 
   if (numSlides < 1) {
     return (
