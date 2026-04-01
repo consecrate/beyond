@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 
 import type { Loaded } from "jazz-tools"
+import { useAccount } from "jazz-tools/react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
@@ -14,9 +15,11 @@ import {
   questionStatus,
 } from "@/features/jazz/live-session-mutations"
 import type { LiveSession } from "@/features/jazz/schema"
+import { PlaydeckAccount } from "@/features/jazz/schema"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { useJazzImages } from "@/features/slides/use-jazz-images"
 import { Button, buttonVariants, cn } from "@beyond/design-system"
 import {
   ChevronLeft,
@@ -73,6 +76,12 @@ export function RevealSlideBody({
   activeIndex: number
 }) {
   const show = Math.abs(slideIndex - activeIndex) <= LAZY_RADIUS
+  const containerRef = useRef<HTMLDivElement>(null)
+  const me = useAccount(PlaydeckAccount, {
+    select: (account) => (account.$isLoaded ? account : null),
+  })
+
+  useJazzImages(containerRef, me)
 
   if (slide.poll || slide.question || slide.interactiveError) {
     return (
@@ -98,6 +107,7 @@ export function RevealSlideBody({
 
   return (
     <div
+      ref={containerRef}
       className="prose prose-invert max-h-[min(70vh,700px)] w-full max-w-4xl overflow-auto px-2 text-left prose-headings:font-semibold prose-p:leading-relaxed"
       dangerouslySetInnerHTML={{ __html: inner }}
     />
