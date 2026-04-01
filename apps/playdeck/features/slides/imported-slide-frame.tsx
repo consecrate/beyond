@@ -283,10 +283,10 @@ export function ImportedSlideFrame({
     const imageAspect = imageSize.width / imageSize.height
     const relativeDelta = Math.abs(imageAspect - SLIDE_ASPECT_RATIO) / SLIDE_ASPECT_RATIO
 
-    if (relativeDelta <= 0.1) {
+    if (relativeDelta <= 0.12) {
       return "soft-cover"
     }
-    if (relativeDelta <= 0.24) {
+    if (relativeDelta <= 0.5) {
       return "hybrid"
     }
     return "contain"
@@ -296,9 +296,9 @@ export function ImportedSlideFrame({
     () =>
       cn(
         "relative z-20 flex items-center justify-center overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/10 shadow-[0_24px_80px_rgba(0,0,0,0.38)] transition-all duration-300",
-        fitMode === "soft-cover" && "h-[94%] w-[96%]",
-        fitMode === "hybrid" && "h-[92%] w-[94%]",
-        fitMode === "contain" && "h-full w-full rounded-none border-transparent bg-transparent shadow-none",
+        fitMode === "soft-cover" && "h-[98%] w-[99%]",
+        fitMode === "hybrid" && "h-[97%] w-[98%]",
+        fitMode === "contain" && "h-[96%] w-[97%] border-transparent bg-transparent shadow-none",
       ),
     [fitMode],
   )
@@ -309,8 +309,8 @@ export function ImportedSlideFrame({
         "transition-all duration-300",
         imageLoaded ? "opacity-100" : "opacity-0",
         fitMode === "soft-cover" && "h-full w-full object-cover scale-[1.015]",
-        fitMode === "hybrid" && "h-full w-full object-contain scale-[1.03]",
-        fitMode === "contain" && "max-h-full max-w-full object-contain",
+        fitMode === "hybrid" && "h-full w-full object-contain scale-[1.12]",
+        fitMode === "contain" && "h-full w-full object-contain scale-[1.05]",
       ),
     [fitMode, imageLoaded],
   )
@@ -318,7 +318,7 @@ export function ImportedSlideFrame({
   return (
     <div
       className={cn(
-        "relative flex h-full w-full items-center justify-center overflow-hidden rounded-2xl bg-[#0d1117] px-4 py-4",
+        "relative flex h-full w-full items-center justify-center overflow-hidden rounded-2xl bg-[#0d1117] px-2 py-2",
         className,
       )}
     >
@@ -380,9 +380,9 @@ export function ImportedSlideFrame({
             src={resolved.src}
             alt=""
             aria-hidden
-            className="pointer-events-none absolute inset-0 z-0 h-full w-full scale-110 object-cover opacity-35 blur-3xl saturate-125"
+            className="pointer-events-none absolute inset-0 z-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl saturate-125"
           />
-          <div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_center,transparent_12%,rgba(13,17,23,0.28)_54%,rgba(13,17,23,0.82)_100%)]" />
+          <div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_center,transparent_18%,rgba(13,17,23,0.16)_56%,rgba(13,17,23,0.58)_100%)]" />
           {!imageLoaded ? (
             <div className="absolute inset-0 z-30 flex items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-white/55" />
