@@ -29,13 +29,20 @@ export const QuestionState = co.map({
   status: z.union([z.literal("idle"), z.literal("open"), z.literal("revealed")]),
 })
 
+export const SessionPlayer = co.map({
+  account_id: z.string(),
+  name: z.string(),
+})
+
 /** Public-read live deck snapshot + authoritative slide index for viewers. */
 export const LiveSession = co.map({
   deckTitle: z.string(),
   markdown: z.string(),
   activeSlideIndex: z.number(),
   status: z.union([z.literal("live"), z.literal("ended")]),
+  is_lobby_visible: z.boolean().optional(),
   presenter_account_id: z.string(),
+  joined_players: co.list(SessionPlayer).optional(),
   poll_votes: co.list(PollVote),
   /** Poll keys that no longer accept votes (final results). */
   closed_poll_keys: co.list(z.string()).optional(),
