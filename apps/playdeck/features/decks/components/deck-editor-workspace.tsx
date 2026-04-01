@@ -1,9 +1,11 @@
 "use client"
 
 import { useAccount } from "jazz-tools/react"
-import { assertLoaded } from "jazz-tools"
+import { assertLoaded, Group } from "jazz-tools"
+import { createImage } from "jazz-tools/media"
 import {
   startTransition,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -16,6 +18,7 @@ import { replaceSlidesFromMarkdown } from "@/features/decks/jazz-deck-mutations"
 import type { DeckSlideView } from "@/features/decks/deck-types"
 import { appendPollSlideMarkdown } from "@/features/decks/parse-slide-poll"
 import { appendQuestionSlideMarkdown } from "@/features/decks/parse-slide-question"
+import type { ImageUploadFn } from "@/features/decks/codemirror-image-paste"
 import {
   deckSlidesToRevealModels,
   markdownMatchesSlides,
@@ -146,6 +149,28 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
     })
   }
 
+  const handleImageUpload: ImageUploadFn = useCallback(
+    async (blob) => {
+      try {
+        if (!me.$isLoaded) return { error: "Not signed in" }
+        const imageGroup = Group.create(me)
+        imageGroup.addMember("everyone", "reader")
+        const image = await createImage(blob, {
+          owner: imageGroup,
+          maxSize: 1024,
+          placeholder: "blur",
+          progressive: true,
+        })
+        return { id: image.$jazz.id }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Upload failed"
+        setError(msg)
+        return { error: msg }
+      }
+    },
+    [me, setError],
+  )
+
   const statusMessage = error
     ? null
     : pending
@@ -163,6 +188,7 @@ export function DeckEditorWorkspace({ deckId, slides }: Props) {
               className="h-full min-h-[200px]"
               value={markdown}
               onChange={setMarkdown}
+              onImageUpload={handleImageUpload}
             />
           </div>
         </div>
