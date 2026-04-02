@@ -166,3 +166,66 @@ export async function DELETE(req: NextRequest) {
 
   return NextResponse.json({ ok: true })
 }
+
+export async function PUT(req: NextRequest) {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
+  }
+
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    typeof (body as { oldCode?: unknown }).oldCode !== "string" ||
+    typeof (body as { newCode?: unknown }).newCode !== "string" ||
+    typeof (body as { sessionId?: unknown }).sessionId !== "string"
+  ) {
+    return resError("oldCode, newCode, and sessionId are required as strings", 400)
+  }
+
+  function resError(msg: string, status: number) {
+    return NextResponse.json({ error: msg }, { status })
+  }
+
+  const { oldCode, newCode, sessionId } = body as { oldCode: string; newCode: string; sessionId: string }
+
+  const normalizedOld = normalizeCode(oldCode)
+  const normalizedNew = normalizeCode(newCode)
+  if (!normalizedOld || !normalizedNew) {
+    return resError("Invalid code format (must be 4-8 alphanumeric characters)", 400)
+  }
+
+  if (!sessionId.trim()) {
+    return resError("sessionId is required", 400)
+  }
+
+  const redis = getRedis()
+
+  if (redis) {
+    // Attempt to set the new code via NX
+    const ok = await redis.set(kvKeyCode(normalizedNew), sessionId, {
+      ex: TTL_SECONDS,
+      nx: true,
+    })
+    if (!ok) {
+      return resError("Code is already in use", 409)
+    }
+
+    // Delete the old code mapping if it's different
+    if (normalizedOld !== normalizedNew) {
+      await redis.del(kvKeyCode(normalizedOld))
+    }
+
+    return NextResponse.json({ code: normalizedNew })
+  } else {
+    if (normalizedOld !== normalizedNew) {
+      if (!memSet(normalizedNew, sessionId)) {
+        return resError("Code is already in use", 409)
+      }
+      memDel(normalizedOld)
+    }
+    return NextResponse.json({ code: normalizedNew })
+  }
+}

@@ -47,6 +47,7 @@ function JoinLiveSessionView({
       teams: { $each: true },
       battle_state: {
         round_summary: { entries: { $each: true } },
+        team_prep: { $each: true },
       },
     },
   })
@@ -146,6 +147,11 @@ export default function JoinPage() {
   const [step, setStep] = useState<1 | 2>(1)
   const [code, setCode] = useState("")
   const [resolvedSessionId, setResolvedSessionId] = useState<string | null>(null)
+  
+  const checkSession = useCoState(LiveSession, resolvedSessionId || undefined, {
+    resolve: { joined_players: true }
+  })
+  
   const [displayName, setDisplayName] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -233,6 +239,17 @@ export default function JoinPage() {
       setError("Enter your name.")
       return
     }
+
+    if (trimmedName.length > 20) {
+      setError("Username cannot exceed 20 characters.")
+      return
+    }
+
+    if (!/^[a-zA-Z0-9_\-\s]+$/.test(trimmedName)) {
+      setError("Username can only contain letters, numbers, spaces, underscores, and dashes.")
+      return
+    }
+
     if (!resolvedSessionId) {
       setError("Session is missing. Enter the code again.")
       setStep(1)
@@ -240,6 +257,24 @@ export default function JoinPage() {
     }
     if (!me.$isLoaded) {
       setError("Still setting up. Try again in a moment.")
+      return
+    }
+
+    if (checkSession && checkSession.$isLoaded && checkSession.joined_players?.$isLoaded) {
+      const isTaken = Array.from(checkSession.joined_players).some((p) => {
+        if (!p || !p.$isLoaded) return false
+        return (
+          p.account_id !== me.$jazz.id &&
+          p.name.trim().toLowerCase() === trimmedName.toLowerCase()
+        )
+      })
+
+      if (isTaken) {
+        setError("That username is already taken in this session.")
+        return
+      }
+    } else {
+      setError("Connecting to session... try again.")
       return
     }
 

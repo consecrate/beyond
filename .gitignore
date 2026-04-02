@@ -45,3 +45,6 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# superpowers state
+.superpowers/**/state/*

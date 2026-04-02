@@ -1,5 +1,7 @@
 "use client"
 
+/* eslint-disable react-hooks/refs -- live session + Jazz subscription need ref fallbacks ESLint cannot model */
+
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 
@@ -108,6 +110,7 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
       teams: { $each: true },
       battle_state: {
         round_summary: { entries: { $each: true } },
+        team_prep: { $each: true },
       },
     },
   })
@@ -185,7 +188,9 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
       })
 
       if (!res.ok) {
+        const created = result.liveSession
         liveSessionRef.current = null
+        endLiveSession(created)
         const err = (await res.json().catch(() => null)) as {
           error?: string
         } | null
@@ -236,6 +241,36 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
     if (!session) return
     updateLiveSlideIndex(session, index)
   }, [])
+
+  const handleChangeCode = useCallback(async (newCode: string) => {
+    const session = liveSessionSub.$isLoaded ? liveSessionSub : liveSessionRef.current
+    if (!session) return { ok: false, error: "No active session" }
+    if (!joinCodeRef.current) return { ok: false, error: "No existing code" }
+
+    try {
+      const res = await fetch("/api/live-sessions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: coValueId(session),
+          oldCode: joinCodeRef.current,
+          newCode,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        return { ok: false, error: err?.error || "Could not change code" }
+      }
+
+      const data = await res.json()
+      joinCodeRef.current = data.code
+      setJoinCode(data.code)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: "Network error" }
+    }
+  }, [liveSessionSub])
 
   const handleClosePoll = useCallback(
     (pollKey: string) => {
@@ -485,6 +520,7 @@ export function PresentDeckClient({ deckId, initialSlideIndex }: Props) {
         onGoLive: handleGoLive,
         onEndLive: handleEndLive,
         onSlideIndexSync: handleSlideIndexSync,
+        onChangeCode: handleChangeCode,
         liveSession: liveSessionResolved,
         onClosePoll: handleClosePoll,
         onStartQuestion: handleStartQuestion,

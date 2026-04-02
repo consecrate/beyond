@@ -1,10 +1,12 @@
 "use client"
 
+/* eslint-disable react-hooks/refs -- CodeMirror callbacks need latest props via ref sync; extensions close over stable wrappers */
+
 import { markdown } from "@codemirror/lang-markdown"
 import { EditorView } from "@codemirror/view"
 import { useTheme } from "next-themes"
 import { useCallback, useMemo, useRef } from "react"
-import CodeMirror from "@uiw/react-codemirror"
+import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror"
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github"
 
 import { cn } from "@beyond/design-system"
@@ -13,6 +15,7 @@ import { markdownFormattingKeymap } from "@/features/decks/codemirror-markdown-f
 import {
   imagePasteExtension,
   type ImageUploadFn,
+  removeUploadingPlaceholderView,
 } from "@/features/decks/codemirror-image-paste"
 import { imageDropExtension } from "@/features/decks/codemirror-image-drop"
 import { imageCommandExtension } from "@/features/decks/codemirror-image-command"
@@ -37,6 +40,7 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingInsertAtRef = useRef<number | null>(null)
+  const editorRef = useRef<ReactCodeMirrorRef>(null)
   const valueRef = useRef(value)
   valueRef.current = value // Keep ref in sync with prop
 
@@ -80,59 +84,71 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       e.target.value = ""
-      if (!file) return
+      if (!file) {
+        pendingInsertAtRef.current = null
+        return
+      }
 
       const insertAt = pendingInsertAtRef.current ?? 0
       pendingInsertAtRef.current = null
 
-      // Access the CM EditorView attached to the CodeMirror DOM node
-      const editorDom = document.querySelector(".cm-editor") as (HTMLElement & { cmView?: EditorView }) | null
-      const view = (editorDom as unknown as { CodeMirror?: { view?: EditorView } })?.CodeMirror?.view
+      // Access the CM EditorView from the CodeMirror React component ref
+      const view = editorRef.current?.view
       const currentDoc = valueRef.current
       const isImportSlide = isImportSlideAtPosition(currentDoc, insertAt)
 
       if (!view) {
-        onImageUploadRef.current(file, {
-          mode: isImportSlide ? "imported-slide" : "inline",
-        }).then((result) => {
-          if ("markdown" in result) {
-            const latestValue = valueRef.current
-            if (isImportSlide) {
-              const change = replaceSlideBodyAtPosition(
-                latestValue,
-                insertAt,
-                result.markdown,
-              )
-              onChangeRef.current(
-                latestValue.slice(0, change.from) +
-                  change.insert +
-                  latestValue.slice(change.to),
-              )
-              return
-            }
+        onImageUploadRef
+          .current(file, {
+            mode: isImportSlide ? "imported-slide" : "inline",
+          })
+          .then((result) => {
+            if ("markdown" in result) {
+              const latestValue = valueRef.current
+              if (isImportSlide) {
+                const change = replaceSlideBodyAtPosition(
+                  latestValue,
+                  insertAt,
+                  result.markdown,
+                )
+                onChangeRef.current(
+                  latestValue.slice(0, change.from) +
+                    change.insert +
+                    latestValue.slice(change.to),
+                )
+                return
+              }
 
-            onChangeRef.current(
-              latestValue.slice(0, insertAt) +
-                `${result.markdown}\n` +
-                latestValue.slice(insertAt),
-            )
-          }
-        })
+              onChangeRef.current(
+                latestValue.slice(0, insertAt) +
+                  `${result.markdown}\n` +
+                  latestValue.slice(insertAt),
+              )
+            }
+          })
+          .catch((err: unknown) => {
+            console.error("image upload failed (no editor view)", err)
+          })
         return
       }
 
       if (isImportSlide) {
-        void onImageUploadRef.current(file, { mode: "imported-slide" }).then((result) => {
-          if ("error" in result) return
-          const updatedDoc = view.state.doc.toString()
-          const change = replaceSlideBodyAtPosition(
-            updatedDoc,
-            insertAt,
-            result.markdown,
-          )
-          view.dispatch({ changes: change })
-          syncParentFromView(view.state.doc.toString())
-        })
+        void onImageUploadRef
+          .current(file, { mode: "imported-slide" })
+          .then((result) => {
+            if ("error" in result) return
+            const updatedDoc = view.state.doc.toString()
+            const change = replaceSlideBodyAtPosition(
+              updatedDoc,
+              insertAt,
+              result.markdown,
+            )
+            view.dispatch({ changes: change })
+            syncParentFromView(view.state.doc.toString())
+          })
+          .catch((err: unknown) => {
+            console.error("imported-slide image upload failed", err)
+          })
         return
       }
 
@@ -144,27 +160,24 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
       })
       syncParentFromView(view.state.doc.toString())
 
-      onImageUploadRef.current(file, { mode: "inline" }).then((result) => {
-        // Find the placeholder token position in current doc
-        const current = view.state.doc.toString()
-        const placeholderText = `![${token}]()`
-        const placeholderStart = current.indexOf(placeholderText)
-        
-        if (placeholderStart === -1) return // Token already removed
-        
-        if ("error" in result) {
-          // Delete the placeholder with surrounding newlines
-          let deleteFrom = placeholderStart
-          let deleteTo = placeholderStart + placeholderText.length
-          if (deleteTo < current.length && current[deleteTo] === "\n") {
-            deleteTo++
+      onImageUploadRef
+        .current(file, { mode: "inline" })
+        .then((result) => {
+          const current = view.state.doc.toString()
+          const placeholderText = `![${token}]()`
+          const placeholderStart = current.indexOf(placeholderText)
+
+          if (placeholderStart === -1) return
+
+          if ("error" in result) {
+            removeUploadingPlaceholderView(view, token, syncParentFromView)
+            return
           }
-          view.dispatch({
-            changes: { from: deleteFrom, to: deleteTo, insert: "" },
-          })
-        } else {
-          // Include the newline in the replacement
-          const actualPlaceholder = placeholderText + (current[placeholderStart + placeholderText.length] === "\n" ? "\n" : "")
+          const actualPlaceholder =
+            placeholderText +
+            (current[placeholderStart + placeholderText.length] === "\n"
+              ? "\n"
+              : "")
           view.dispatch({
             changes: {
               from: placeholderStart,
@@ -172,9 +185,12 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
               insert: result.markdown + "\n",
             },
           })
-        }
-        syncParentFromView(view.state.doc.toString())
-      })
+          syncParentFromView(view.state.doc.toString())
+        })
+        .catch((err: unknown) => {
+          console.error("inline image upload failed", err)
+          removeUploadingPlaceholderView(view, token, syncParentFromView)
+        })
     },
     [syncParentFromView],
   )
@@ -190,6 +206,7 @@ export function DeckMarkdownEditor({ value, onChange, onImageUpload, className }
         aria-hidden
       />
       <CodeMirror
+        ref={editorRef}
         theme="none"
         value={value}
         height="100%"

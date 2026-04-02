@@ -1,6 +1,15 @@
 "use client"
 
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+/* eslint-disable react-hooks/set-state-in-effect -- resolve IndexedDB / image src in effects; state mirrors async external store */
+
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import {
@@ -261,6 +270,24 @@ function ImportedSlideStatus({
   )
 }
 
+function applyLoadedFromImage(
+  img: HTMLImageElement,
+  setters: {
+    setImageError: (v: boolean) => void
+    setImageLoaded: (v: boolean) => void
+    setImageSize: (v: { width: number; height: number } | null) => void
+  },
+) {
+  if (!img.complete || img.naturalWidth < 1) return false
+  setters.setImageError(false)
+  setters.setImageLoaded(true)
+  setters.setImageSize({
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+  })
+  return true
+}
+
 export function ImportedSlideFrame({
   source,
   title,
@@ -269,11 +296,44 @@ export function ImportedSlideFrame({
 }: ImportedSlideFrameProps) {
   const resolved = useImportedSlideSource(source)
   const [imageLoaded, setImageLoaded] = useState(false)
+  const [imageError, setImageError] = useState(false)
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null)
+  const foregroundImgRef = useRef<HTMLImageElement | null>(null)
 
-  useEffect(() => {
+  /** Reset on src change and sync from DOM when the image is already decoded (cached/blob). Must run in layout phase so a later useEffect reset cannot wipe a correct loaded state. */
+  useLayoutEffect(() => {
     setImageLoaded(false)
+    setImageError(false)
     setImageSize(null)
+
+    const img = foregroundImgRef.current
+    if (!img || !resolved.src) return
+
+    const setters = {
+      setImageError,
+      setImageLoaded,
+      setImageSize,
+    }
+
+    const trySync = () => {
+      if (applyLoadedFromImage(img, setters)) return
+      if (typeof img.decode === "function") {
+        void img
+          .decode()
+          .then(() => {
+            applyLoadedFromImage(img, setters)
+          })
+          .catch(() => {
+            /* decode can reject; onLoad/onError still apply */
+          })
+      }
+    }
+
+    trySync()
+    const raf = requestAnimationFrame(() => {
+      trySync()
+    })
+    return () => cancelAnimationFrame(raf)
   }, [resolved.src])
 
   const fitMode = useMemo<ImportedSlideFitMode>(() => {
@@ -295,22 +355,19 @@ export function ImportedSlideFrame({
   const foregroundFrameClassName = useMemo(
     () =>
       cn(
-        "relative z-20 flex items-center justify-center overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/10 shadow-[0_24px_80px_rgba(0,0,0,0.38)] transition-all duration-300",
-        fitMode === "soft-cover" && "h-[98%] w-[99%]",
-        fitMode === "hybrid" && "h-[97%] w-[98%]",
-        fitMode === "contain" && "h-[96%] w-[97%] border-transparent bg-transparent shadow-none",
+        "relative z-20 flex h-full w-full items-center justify-center overflow-hidden transition-all duration-300",
       ),
-    [fitMode],
+    [],
   )
 
   const imageClassName = useMemo(
     () =>
       cn(
-        "transition-all duration-300",
+        "transition-all duration-300 h-full w-full",
         imageLoaded ? "opacity-100" : "opacity-0",
-        fitMode === "soft-cover" && "h-full w-full object-cover scale-[1.015]",
-        fitMode === "hybrid" && "h-full w-full object-contain scale-[1.12]",
-        fitMode === "contain" && "h-full w-full object-contain scale-[1.05]",
+        fitMode === "soft-cover" && "object-cover",
+        fitMode === "hybrid" && "object-contain",
+        fitMode === "contain" && "object-contain",
       ),
     [fitMode, imageLoaded],
   )
@@ -318,7 +375,7 @@ export function ImportedSlideFrame({
   return (
     <div
       className={cn(
-        "relative flex h-full w-full items-center justify-center overflow-hidden rounded-2xl bg-[#0d1117] px-2 py-2",
+        "relative flex h-full w-full items-center justify-center overflow-hidden",
         className,
       )}
     >
@@ -326,7 +383,7 @@ export function ImportedSlideFrame({
         <ImportedSlideStatus
           icon={<ImageIcon className="h-5 w-5" />}
           title={title?.trim() || "Import Slide"}
-          message="This slide is ready for `#import`. Paste or drop one image to fill the whole slide."
+          message="This slide is ready for `#import` or `#image`. Paste or drop one image to fill the whole slide."
         />
       ) : null}
 
@@ -383,28 +440,42 @@ export function ImportedSlideFrame({
             className="pointer-events-none absolute inset-0 z-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl saturate-125"
           />
           <div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_center,transparent_18%,rgba(13,17,23,0.16)_56%,rgba(13,17,23,0.58)_100%)]" />
-          {!imageLoaded ? (
+          {!imageLoaded && !imageError ? (
             <div className="absolute inset-0 z-30 flex items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-white/55" />
             </div>
           ) : null}
           <div className={foregroundFrameClassName}>
-            <img
-              src={resolved.src}
-              alt={title?.trim() || "Imported slide"}
-              className={imageClassName}
-              loading={priority ? "eager" : "lazy"}
-              decoding="async"
-              fetchPriority={priority ? "high" : "auto"}
-              onLoad={(event) => {
-                setImageLoaded(true)
-                setImageSize({
-                  width: event.currentTarget.naturalWidth,
-                  height: event.currentTarget.naturalHeight,
-                })
-              }}
-              onError={() => setImageLoaded(true)}
-            />
+            {imageError ? (
+              <div className="flex min-h-[120px] w-full flex-col items-center justify-center gap-2 px-4 text-center text-sm text-white/70">
+                <AlertCircle className="h-8 w-8 text-amber-400/90" aria-hidden />
+                <span>Could not load slide image</span>
+              </div>
+            ) : (
+              <img
+                ref={foregroundImgRef}
+                src={resolved.src}
+                alt={title?.trim() || "Imported slide"}
+                className={imageClassName}
+                loading="eager"
+                decoding="async"
+                fetchPriority={priority ? "high" : "auto"}
+                onLoad={(event) => {
+                  const el = event.currentTarget
+                  setImageError(false)
+                  setImageLoaded(true)
+                  setImageSize({
+                    width: el.naturalWidth,
+                    height: el.naturalHeight,
+                  })
+                }}
+                onError={() => {
+                  setImageError(true)
+                  setImageLoaded(true)
+                  setImageSize(null)
+                }}
+              />
+            )}
           </div>
           {resolved.uploadState === "pending" ? (
             <div className="absolute right-4 top-4 z-30 rounded-full border border-white/10 bg-black/50 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur">

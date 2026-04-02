@@ -81,6 +81,7 @@ export const BattleRoundEntry = co.map({
   attacker_name: z.string(),
   target_name: z.string(),
   was_correct: z.boolean(),
+  attacker_correct_percentage: z.number().optional(),
   damage: z.number(),
   target_hp_before: z.number(),
   target_hp_after: z.number(),
@@ -90,6 +91,16 @@ export const BattleRoundEntry = co.map({
 export const BattleRoundSummary = co.map({
   question_key: z.string(),
   entries: co.list(BattleRoundEntry),
+})
+
+/**
+ * Per-attacking-team prep for a round: target + lock-in, updated one team at a time
+ * (avoids whole-map overwrites when two leaders act concurrently).
+ */
+export const BattleTeamPrep = co.map({
+  team_id: z.string(),
+  target_team_id: z.string().optional(),
+  locked: z.boolean().optional(),
 })
 
 export const BattleState = co.map({
@@ -103,10 +114,15 @@ export const BattleState = co.map({
       z.literal("podium"),
     ])
     .optional(),
-  targets: z.record(z.string(), z.string()).optional(), // AttackingTeamId -> TargetTeamId
+  /** @deprecated Prefer `team_prep`; kept for legacy sessions. */
+  targets: z.record(z.string(), z.string()).optional(),
   round_summary: BattleRoundSummary.optional(),
   /** Per-round power-up claims (pending/confirmed); inventory is consumed on round resolve. */
   powerup_selections: co.list(BattlePowerupSelection).optional(),
+  /** @deprecated Prefer `team_prep`; kept for legacy sessions. */
+  locked_teams: z.record(z.string(), z.boolean()).optional(),
+  /** One row per attacking team; mutate a single row when a leader picks target or locks. */
+  team_prep: co.list(BattleTeamPrep).optional(),
 })
 
 /** Public-read live deck snapshot + authoritative slide index for viewers. */

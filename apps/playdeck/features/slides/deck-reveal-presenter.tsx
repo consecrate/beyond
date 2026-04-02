@@ -23,6 +23,7 @@ import {
 } from "@/features/slides/imported-slide-frame"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { CodeSlideCard } from "@/features/slides/code-slide-card"
 import { useRevealAutoLayout } from "@/features/slides/use-reveal-auto-layout"
 import { useJazzImages } from "@/features/slides/use-jazz-images"
 import { BattleLog } from "@/features/slides/battle-log"
@@ -52,6 +53,7 @@ export type DeckLiveControls = {
   joinCode: string | null
   onGoLive: (currentSlideIndex: number) => void | Promise<void>
   onEndLive: () => void | Promise<void>
+  onChangeCode?: (newCode: string) => any
   onSlideIndexSync?: (index: number) => void
   /** When live, poll slides show tallies from this CoValue. */
   liveSession?: Loaded<typeof LiveSession> | null
@@ -166,7 +168,7 @@ export function RevealSlideBody({
 
   useJazzImages(containerRef, me, slide.html)
 
-  if (slide.poll || slide.question || slide.interactiveError) {
+  if (slide.poll || slide.question || slide.interactiveError || slide.code) {
     return (
       <div className="h-0 w-0 overflow-hidden opacity-0" aria-hidden />
     )
@@ -347,6 +349,28 @@ function GridSlideThumbnail({
               name={`grid-poll-${index}`}
               pollClosed={pollClosed}
             />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (slide.code) {
+    return (
+      <div
+        className="@container relative w-full overflow-hidden rounded-md border border-border bg-background"
+        style={{ aspectRatio: `${REVEAL_WIDTH} / ${REVEAL_HEIGHT}` }}
+      >
+        <div
+          className="pointer-events-none absolute left-0 top-0 origin-top-left"
+          style={{
+            width: REVEAL_WIDTH,
+            height: REVEAL_HEIGHT,
+            transform: `scale(calc(100cqw / ${REVEAL_WIDTH}px))`,
+          }}
+        >
+          <div className="flex h-full w-full flex-col justify-center overflow-hidden p-2">
+            <CodeSlideCard block={slide.code} layout="card" />
           </div>
         </div>
       </div>
@@ -1259,6 +1283,22 @@ export function DeckRevealPresenter({
                     )
                   })()}
 
+                </div>
+              </div>
+            ) : null}
+
+            {view === "slide" && slides[activeIndex]?.code ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center">
+                    <CodeSlideCard
+                      block={slides[activeIndex].code!}
+                      layout="overlay"
+                    />
+                  </div>
                 </div>
               </div>
             ) : null}

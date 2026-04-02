@@ -6,6 +6,7 @@ import {
   DEFAULT_POLL_SLIDE_CHUNK,
   tryParsePollFromSlideBody,
 } from "@/features/decks/parse-slide-poll"
+import { importedSlideRevealBackgroundUrl } from "@/features/decks/parse-slide-import"
 import {
   deckSlidesToRevealModels,
   markdownMatchesSlides,
@@ -288,5 +289,42 @@ describe("presenterRevealSlidesFromSources", () => {
     expect(fromLive[0].html).toBe("")
     expect(fromLive[0].poll).toBeNull()
     expect(fromLive[0].question).toBeNull()
+  })
+
+  it("maps #image slides to imported image models", () => {
+    const liveMd = `# Canvas\n\n#image https://cdn.example.com/slide-1.webp\n`
+    const deckViews = viewsFromParsed(parseMarkdownDocumentToSlides(liveMd))
+    const fromLive = presenterRevealSlidesFromSources({
+      liveMarkdown: liveMd,
+      deckViews,
+    })
+
+    expect(fromLive[0].importedImage).toEqual({
+      type: "imported-image",
+      src: "https://cdn.example.com/slide-1.webp",
+    })
+    expect(fromLive[0].html).toBe("")
+    expect(fromLive[0].poll).toBeNull()
+    expect(fromLive[0].question).toBeNull()
+  })
+
+  it("remote imported image src is eligible for Reveal full-bleed background URL", () => {
+    const liveMd = `# Canvas\n\n#import https://cdn.example.com/slide-1.webp\n`
+    const models = deckSlidesToRevealModels(
+      parseMarkdownDocumentToSlides(liveMd),
+    )
+    expect(
+      importedSlideRevealBackgroundUrl(models[0]!.importedImage!.src),
+    ).toBe("https://cdn.example.com/slide-1.webp")
+  })
+
+  it("local imported image src is not eligible for Reveal background until remote URL", () => {
+    const liveMd = `# Canvas\n\n#import local://abc\n`
+    const models = deckSlidesToRevealModels(
+      parseMarkdownDocumentToSlides(liveMd),
+    )
+    expect(
+      importedSlideRevealBackgroundUrl(models[0]!.importedImage!.src),
+    ).toBeNull()
   })
 })

@@ -13,7 +13,9 @@ export type ParseImportedSlideResult =
   | { kind: "invalid-import"; block: InvalidImportedSlideBlock }
   | { kind: "not-import" }
 
-const IMPORT_LINE_RE = /^#import(?:\s+(\S+))?\s*$/i
+/** `#import` and `#image` are aliases for a full-slide imported image. */
+const IMPORTED_SLIDE_LINE_RE = /^#(?:import|image)(?:\s+(\S+))?\s*$/i
+const IMPORTED_SLIDE_FIRST_LINE_RE = /^#(?:import|image)(?:\s|$)/i
 const LOCAL_IMPORT_PREFIX = "local://"
 
 export function parseImportedSlideBody(body: string): ParseImportedSlideResult {
@@ -24,36 +26,42 @@ export function parseImportedSlideBody(body: string): ParseImportedSlideResult {
   if (i >= lines.length) return { kind: "not-import" }
 
   const firstLine = lines[i]!.trim()
-  if (!/^#import(?:\s|$)/i.test(firstLine)) {
+  if (!IMPORTED_SLIDE_FIRST_LINE_RE.test(firstLine)) {
     return { kind: "not-import" }
   }
 
-  const match = firstLine.match(IMPORT_LINE_RE)
+  const match = firstLine.match(IMPORTED_SLIDE_LINE_RE)
   if (!match) {
     return {
       kind: "invalid-import",
       block: {
         type: "imported-slide",
         message:
-          "Imported slides must use `#import` or `#import <image-url>` on a single line.",
+          "Imported slides must use `#import` or `#image` (optionally with `<image-url>`).",
       },
     }
   }
 
+  let src = match[1]?.trim() ?? null
+
   for (let j = i + 1; j < lines.length; j++) {
-    if (lines[j]!.trim() !== "") {
-      return {
-        kind: "invalid-import",
-        block: {
-          type: "imported-slide",
-          message:
-            "Imported slides may only contain a single `#import` line in the slide body.",
-        },
+    const line = lines[j]!.trim()
+    if (line !== "") {
+      if (!src) {
+        src = line
+      } else {
+        return {
+          kind: "invalid-import",
+          block: {
+            type: "imported-slide",
+            message:
+              "Imported slides may only contain a single `#import` or `#image` line, optionally followed by exactly one image URL.",
+          },
+        }
       }
     }
   }
 
-  const src = match[1]?.trim() ?? null
   return {
     kind: "imported-image",
     block: {
@@ -71,6 +79,18 @@ export function isLocalImportedSlideSource(src: string | null | undefined): bool
   return typeof src === "string" && src.startsWith(LOCAL_IMPORT_PREFIX)
 }
 
+/**
+ * When non-null, the slide can use Reveal `data-background-image` (full-bleed cover).
+ * `local://` sources stay on `ImportedSlideFrame` until a remote URL exists.
+ */
+export function importedSlideRevealBackgroundUrl(
+  src: string | null | undefined,
+): string | null {
+  if (typeof src !== "string" || src.trim() === "") return null
+  if (isLocalImportedSlideSource(src)) return null
+  return src
+}
+
 export function parseLocalImportedSlideId(src: string | null | undefined): string | null {
   if (!isLocalImportedSlideSource(src)) return null
   return src!.slice(LOCAL_IMPORT_PREFIX.length) || null
@@ -81,7 +101,9 @@ export function createLocalImportedSlideSource(importId: string): string {
 }
 
 export function extractLocalImportedSlideIds(markdown: string): string[] {
-  const matches = markdown.matchAll(/^\s*#import\s+local:\/\/([^\s]+)\s*$/gim)
+  const matches = markdown.matchAll(
+    /^\s*#(?:import|image)\s+local:\/\/([^\s]+)\s*$/gim,
+  )
   const ids = new Set<string>()
   for (const match of matches) {
     const id = match[1]?.trim()
@@ -90,10 +112,21 @@ export function extractLocalImportedSlideIds(markdown: string): string[] {
   return [...ids]
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
 export function replaceImportedSlideSource(
   markdown: string,
   fromSrc: string,
   toSrc: string,
 ): string {
-  return markdown.replaceAll(`#import ${fromSrc}`, `#import ${toSrc}`)
+  const escapedFromSrc = escapeRegExp(fromSrc)
+  const pattern = new RegExp(
+    `^(\\s*#(?:import|image)\\s+)${escapedFromSrc}(\\s*)$`,
+    "gim",
+  )
+  return markdown.replace(pattern, (_match, prefix: string, suffix: string) => {
+    return `${prefix}${toSrc}${suffix}`
+  })
 }

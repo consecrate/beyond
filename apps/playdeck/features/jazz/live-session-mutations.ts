@@ -1,17 +1,20 @@
 import type { Loaded } from "jazz-tools"
 import { Account, assertLoaded, co, Group, z } from "jazz-tools"
 
+import { getBattleTargetsMap } from "@/features/jazz/battle-state-targets"
 import { deckSlidesToViews } from "@/features/decks/deck-map"
 import { replaceImportedSlideSource } from "@/features/decks/parse-slide-import"
 import {
   parseMarkdownDocumentToSlides,
   slidesToMarkdownDocument,
 } from "@/features/decks/slide-markdown-document"
+import { STACKABLE_POWERUP_TYPES } from "@/features/slides/powerup-meta"
 import {
   BattlePowerupSelection,
   BattleRoundEntry,
   BattleRoundSummary,
   BattleState,
+  BattleTeamPrep,
   Deck,
   LiveSession,
   PlaydeckAccount,
@@ -459,6 +462,7 @@ export function stopQuestion(
           const teamAccuracyPass = new Map<string, boolean>()
           /** All members answered correctly (for critical_hit 3× damage). */
           const teamPerfectAccuracy = new Map<string, boolean>()
+          const teamAccuracyPercentage = new Map<string, number>()
           for (const t of teams) {
             if (!t || !t.$isLoaded) continue
             if ((t.hp ?? 0) <= 0) {
@@ -493,6 +497,7 @@ export function stopQuestion(
             const ratio = correctCount / memberCount
             teamAccuracyPass.set(t.id, ratio > 0.85)
             teamPerfectAccuracy.set(t.id, ratio === 1)
+            teamAccuracyPercentage.set(t.id, Math.round(ratio * 100))
           }
 
           const hpBefore = new Map<string, number>()
@@ -501,7 +506,7 @@ export function stopQuestion(
             hpBefore.set(t.id, t.hp ?? 0)
           }
 
-          const targets = battleState.targets ?? {}
+          const targets = getBattleTargetsMap(battleState)
           const teamById = new Map<string, Loaded<typeof Team>>()
           for (const t of teams) {
             if (t && t.$isLoaded) teamById.set(t.id, t)
@@ -523,7 +528,7 @@ export function stopQuestion(
             for (const s of selList) {
               if (!s || !s.$isLoaded) continue
               if (s.status !== "confirmed") continue
-              const isStackable = s.powerup_type === "healing_potion" || s.powerup_type === "step_up"
+              const isStackable = STACKABLE_POWERUP_TYPES.has(s.powerup_type)
               if (!isStackable) {
                 const dedupeKey = `${s.team_id}:${s.powerup_type}`
                 if (seenNonStackable.has(dedupeKey)) continue
@@ -670,6 +675,8 @@ export function stopQuestion(
             const ta = targetId ? (hpAfter.get(targetId) ?? 0) : 0
             const downed = targetId ? ta === 0 : false
 
+            const ackPct = teamAccuracyPercentage.get(t.id) ?? 0
+
             entryList.$jazz.push(
               BattleRoundEntry.create(
                 {
@@ -678,6 +685,7 @@ export function stopQuestion(
                   attacker_name: t.name,
                   target_name: targetName,
                   was_correct: wasCorrect,
+                  attacker_correct_percentage: ackPct,
                   damage: atkDmg,
                   target_hp_before: tb,
                   target_hp_after: ta,
@@ -829,6 +837,9 @@ export function joinLiveSession(
   for (const p of players) {
     if (!p || !p.$isLoaded) continue
     if (p.account_id === me.$jazz.id) {
+      if (me.profile?.$isLoaded && p.name !== me.profile.name) {
+        p.$jazz.applyDiff({ name: me.profile.name })
+      }
       return // Already joined
     }
   }
@@ -941,6 +952,15 @@ export function assignTeamLeader(
 
   if (!liveSession.$jazz.has("teams") || !liveSession.teams) return
   assertLoaded(liveSession.teams)
+
+  if (accountId) {
+    for (const t of liveSession.teams) {
+      if (!t || !t.$isLoaded) continue
+      if (t.id !== teamId && t.leader_account_id === accountId) {
+        t.$jazz.applyDiff({ leader_account_id: undefined })
+      }
+    }
+  }
 
   for (const t of liveSession.teams) {
     if (!t) continue
@@ -1158,14 +1178,7 @@ export function startGameplay(
   if (me.$jazz.id !== liveSession.presenter_account_id) return
 
   const owner = liveSession.$jazz.owner
-  const battleState = BattleState.create(
-    {
-      phase: "target_selection",
-      targets: {},
-      powerup_selections: co.list(BattlePowerupSelection).create([], owner),
-    },
-    owner,
-  )
+  const battleState = createFreshTargetSelectionBattleState(owner)
 
   liveSession.$jazz.applyDiff({
     game_phase: "battle_royale",
@@ -1335,25 +1348,67 @@ export function resetBattleTargetSelection(
   const battleState = liveSession.battle_state
   if (battleState && battleState.$isLoaded) {
     const owner = liveSession.$jazz.owner
-    battleState.$jazz.applyDiff({
-      phase: "target_selection",
-      targets: {},
-      round_summary: undefined,
-      powerup_selections: co.list(BattlePowerupSelection).create([], owner),
-    })
+    const list = battleState.powerup_selections
+    const hasPowerupSelectionsList =
+      battleState.$jazz.has("powerup_selections") &&
+      list != null &&
+      list.$isLoaded
+
+    if (!hasPowerupSelectionsList) {
+      liveSession.$jazz.applyDiff({
+        battle_state: createFreshTargetSelectionBattleState(owner),
+      })
+    } else {
+      battleState.$jazz.applyDiff({
+        phase: "target_selection",
+        targets: {},
+        locked_teams: {},
+        round_summary: undefined,
+        powerup_selections: co.list(BattlePowerupSelection).create([], owner),
+        team_prep: co.list(BattleTeamPrep).create([], owner),
+      })
+    }
   }
 }
 
-function ensureBattlePowerupSelectionsList(
+/**
+ * Legacy sessions may have `BattleState` without `powerup_selections`. Setting that field
+ * on the existing CoValue throws in Jazz. Replace the whole `battle_state` (round reset).
+ */
+function createFreshTargetSelectionBattleState(owner: Group): Loaded<typeof BattleState> {
+  return BattleState.create(
+    {
+      phase: "target_selection",
+      team_prep: co.list(BattleTeamPrep).create([], owner),
+      powerup_selections: co.list(BattlePowerupSelection).create([], owner),
+    },
+    owner,
+  ) as Loaded<typeof BattleState>
+}
+
+/** Replaces legacy `BattleState` missing `powerup_selections` with a fresh round state. Safe to call when already up to date. */
+export function normalizeBattleStateIfMissingPowerupSelections(
   liveSession: Loaded<typeof LiveSession>,
-  battleState: Loaded<typeof BattleState>,
-): void {
-  if (!battleState.$jazz.has("powerup_selections") || !battleState.powerup_selections) {
-    battleState.$jazz.set(
-      "powerup_selections",
-      co.list(BattlePowerupSelection).create([], liveSession.$jazz.owner),
-    )
+): Loaded<typeof BattleState> | null {
+  const battleState = liveSession.battle_state
+  if (!battleState || !battleState.$isLoaded) return null
+  assertLoaded(battleState)
+
+  const hasPowerupSelectionsField = battleState.$jazz.has("powerup_selections")
+
+  if (hasPowerupSelectionsField) {
+    return battleState
   }
+
+  const owner = liveSession.$jazz.owner
+  liveSession.$jazz.applyDiff({
+    battle_state: createFreshTargetSelectionBattleState(owner),
+  })
+
+  const refreshed = liveSession.battle_state
+  if (!refreshed || !refreshed.$isLoaded) return null
+  assertLoaded(refreshed)
+  return refreshed
 }
 
 function findPlayerTeamId(
@@ -1370,6 +1425,69 @@ function findPlayerTeamId(
     }
   }
   return null
+}
+
+/**
+ * Battle leader mutations must use the caller's SessionPlayer.team_id, not
+ * "first team whose leader_account_id matches" — otherwise duplicate leader
+ * rows or stale data can write another team's prep row.
+ */
+function resolveActingLeaderTeamId(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  notLeaderError: string,
+): { ok: true; myTeamId: string } | { ok: false; error: string } {
+  const teams = liveSession.teams
+  if (!teams || !teams.$isLoaded) return { ok: false, error: "No teams." }
+  assertLoaded(teams)
+
+  const myTeamId = findPlayerTeamId(me, liveSession)
+  if (!myTeamId) return { ok: false, error: "Join a team first." }
+
+  let myTeam: Loaded<typeof Team> | null = null
+  for (const t of teams) {
+    if (!t || !t.$isLoaded) continue
+    if (t.id === myTeamId) {
+      myTeam = t
+      break
+    }
+  }
+  if (!myTeam) return { ok: false, error: "Team not found." }
+  if (myTeam.leader_account_id !== me.$jazz.id) {
+    return { ok: false, error: notLeaderError }
+  }
+  return { ok: true, myTeamId }
+}
+
+function findTeamPrepIndex(
+  battleState: Loaded<typeof BattleState>,
+  teamId: string,
+): number {
+  const list = battleState.team_prep
+  if (!list || !list.$isLoaded) return -1
+  assertLoaded(list)
+  const arr = [...list]
+  for (let i = 0; i < arr.length; i++) {
+    const r = arr[i]
+    if (r && r.$isLoaded && r.team_id === teamId) return i
+  }
+  return -1
+}
+
+function ensureBattleTeamPrepList(
+  liveSession: Loaded<typeof LiveSession>,
+  battleState: Loaded<typeof BattleState>,
+) {
+  if (!battleState.$jazz.has("team_prep")) {
+    battleState.$jazz.set(
+      "team_prep",
+      co.list(BattleTeamPrep).create([], liveSession.$jazz.owner),
+    )
+  }
+  const list = battleState.team_prep
+  if (!list || !list.$isLoaded) return null
+  assertLoaded(list)
+  return list
 }
 
 function findMemberSelectionIndex(
@@ -1394,15 +1512,6 @@ function findMemberSelectionIndex(
   }
   return -1
 }
-
-/**
- * HP-boosting powerup types that multiple teammates are allowed to each pick once per round.
- * All other types are restricted to one picker per team per round.
- */
-const STACKABLE_POWERUP_TYPES = new Set<z.infer<typeof PowerupType>>([
-  "healing_potion",
-  "step_up",
-])
 
 /**
  * Returns true if another member of the same team has already claimed this powerup type
@@ -1462,11 +1571,17 @@ export function claimBattlePowerup(
     return { ok: false, error: "Not in battle royale phase." }
   }
 
-  const battleState = liveSession.battle_state
+  let battleState = liveSession.battle_state
   if (!battleState || !battleState.$isLoaded) {
     return { ok: false, error: "Battle state not initialized." }
   }
   assertLoaded(battleState)
+
+  const normalized = normalizeBattleStateIfMissingPowerupSelections(liveSession)
+  if (!normalized) {
+    return { ok: false, error: "Battle state not initialized." }
+  }
+  battleState = normalized
 
   if (battleState.phase !== "target_selection") {
     return { ok: false, error: "Power-ups can only be chosen during target selection." }
@@ -1489,7 +1604,7 @@ export function claimBattlePowerup(
   }
   if (!myTeam) return { ok: false, error: "Team not found." }
 
-  const targets = battleState.targets ?? {}
+  const targets = getBattleTargetsMap(battleState)
   if (!targets[myTeamId]) {
     return { ok: false, error: "Your leader must choose an attack target first." }
   }
@@ -1518,7 +1633,6 @@ export function claimBattlePowerup(
     return { ok: false, error: "You don't have an unused power-up of that type." }
   }
 
-  ensureBattlePowerupSelectionsList(liveSession, battleState)
   const list = battleState.powerup_selections
   if (!list || !list.$isLoaded) return { ok: false, error: "Could not update power-up state." }
   assertLoaded(list)
@@ -1577,11 +1691,17 @@ export function clearBattlePowerupClaim(
     return { ok: false, error: "Not in battle royale phase." }
   }
 
-  const battleState = liveSession.battle_state
+  let battleState = liveSession.battle_state
   if (!battleState || !battleState.$isLoaded) {
     return { ok: false, error: "Battle state not initialized." }
   }
   assertLoaded(battleState)
+
+  const normalized = normalizeBattleStateIfMissingPowerupSelections(liveSession)
+  if (!normalized) {
+    return { ok: false, error: "Battle state not initialized." }
+  }
+  battleState = normalized
 
   if (battleState.phase !== "target_selection") {
     return { ok: false, error: "Cannot change power-ups now." }
@@ -1619,32 +1739,33 @@ export function selectBattleTarget(
     return { ok: false, error: "Not in battle royale phase." }
   }
 
-  const battleState = liveSession.battle_state
+  let battleState = liveSession.battle_state
   if (!battleState || !battleState.$isLoaded) {
     return { ok: false, error: "Battle state not initialized." }
   }
   assertLoaded(battleState)
 
+  const normalized = normalizeBattleStateIfMissingPowerupSelections(liveSession)
+  if (!normalized) {
+    return { ok: false, error: "Battle state not initialized." }
+  }
+  battleState = normalized
+
   if (battleState.phase !== "target_selection") {
     return { ok: false, error: "Targets can only be locked in during the target selection phase." }
   }
 
-  let myTeamId: string | null = null
+  const leader = resolveActingLeaderTeamId(
+    me,
+    liveSession,
+    "Only team leaders can select targets.",
+  )
+  if (!leader.ok) return leader
+
+  const myTeamId = leader.myTeamId
   const teams = liveSession.teams
   if (!teams || !teams.$isLoaded) return { ok: false, error: "No teams." }
   assertLoaded(teams)
-
-  for (const t of teams) {
-    if (!t || !t.$isLoaded) continue
-    if (t.leader_account_id === me.$jazz.id) {
-      myTeamId = t.id
-      break
-    }
-  }
-
-  if (!myTeamId) {
-    return { ok: false, error: "Only team leaders can select targets." }
-  }
 
   if (myTeamId === targetTeamId) {
      return { ok: false, error: "You cannot target your own team." }
@@ -1655,10 +1776,81 @@ export function selectBattleTarget(
      return { ok: false, error: "You cannot target a team that is already downed." }
   }
 
-  const currentTargets = battleState.targets ? { ...battleState.targets } : {}
-  currentTargets[myTeamId] = targetTeamId
+  const list = ensureBattleTeamPrepList(liveSession, battleState)
+  if (!list) {
+    return { ok: false, error: "Could not update battle prep state." }
+  }
 
-  battleState.$jazz.applyDiff({ targets: currentTargets })
+  const idx = findTeamPrepIndex(battleState, myTeamId)
+  if (idx >= 0) {
+    const row = list[idx]
+    if (!row || !row.$isLoaded) {
+      return { ok: false, error: "Could not update battle prep state." }
+    }
+    row.$jazz.applyDiff({ target_team_id: targetTeamId })
+  } else {
+    list.$jazz.push(
+      BattleTeamPrep.create(
+        { team_id: myTeamId, target_team_id: targetTeamId },
+        liveSession.$jazz.owner,
+      ),
+    )
+  }
+
+  return { ok: true }
+}
+
+export function lockBattleTeam(
+  me: Account,
+  liveSession: Loaded<typeof LiveSession>,
+  isLocked: boolean,
+): { ok: true } | { ok: false; error: string } {
+  assertLoaded(me)
+  assertLoaded(liveSession)
+
+  if (liveSession.game_phase !== "battle_royale") {
+    return { ok: false, error: "Not in battle royale phase." }
+  }
+
+  const battleState = liveSession.battle_state
+  if (!battleState || !battleState.$isLoaded) {
+    return { ok: false, error: "Battle state not initialized." }
+  }
+  assertLoaded(battleState)
+
+  if (battleState.phase !== "target_selection") {
+    return { ok: false, error: "Can only lock in during target selection." }
+  }
+
+  const leader = resolveActingLeaderTeamId(
+    me,
+    liveSession,
+    "Only team leaders can lock in.",
+  )
+  if (!leader.ok) return leader
+
+  const myTeamId = leader.myTeamId
+
+  const list = ensureBattleTeamPrepList(liveSession, battleState)
+  if (!list) {
+    return { ok: false, error: "Could not update battle prep state." }
+  }
+
+  const idx = findTeamPrepIndex(battleState, myTeamId)
+  if (idx >= 0) {
+    const row = list[idx]
+    if (!row || !row.$isLoaded) {
+      return { ok: false, error: "Could not update battle prep state." }
+    }
+    row.$jazz.applyDiff({ locked: isLocked })
+  } else {
+    list.$jazz.push(
+      BattleTeamPrep.create(
+        { team_id: myTeamId, locked: isLocked },
+        liveSession.$jazz.owner,
+      ),
+    )
+  }
 
   return { ok: true }
 }

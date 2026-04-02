@@ -12,7 +12,7 @@ import {
 import { Package } from "lucide-react"
 
 import type { LiveSession, Powerup, SessionPlayer } from "@/features/jazz/schema"
-import { formatPowerupLabel } from "@/features/slides/powerup-meta"
+import { formatPowerupLabel, POWERUP_CATALOG } from "@/features/slides/powerup-meta"
 
 export type InventoryOverlayWindowProps = {
   open: boolean
@@ -68,59 +68,86 @@ export function InventoryOverlayWindow({
             Join a team to see your inventory.
           </p>
         ) : (
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-8">
             <section>
-              <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <h3 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 Your powerups
                 {teamName ? (
-                  <span className="ml-1 font-normal normal-case text-muted-foreground/80">
+                  <span className="ml-1.5 font-medium normal-case tracking-normal text-muted-foreground/70">
                     ({teamName})
                   </span>
                 ) : null}
               </h3>
               {myPowerups.length === 0 ? (
-                <p className="text-sm italic text-muted-foreground">No powerups assigned to you yet.</p>
+                <div className="flex items-center justify-center rounded-xl border border-dashed border-border/50 bg-muted/5 py-8">
+                  <p className="text-sm italic text-muted-foreground">No powerups assigned to you yet.</p>
+                </div>
               ) : (
-                <ul className="flex flex-col gap-2">
-                  {myPowerups.map((pu, i) => (
-                    <li
-                      key={i}
-                      className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm font-medium capitalize"
-                    >
-                      {formatPowerupLabel(pu.type)}
-                      {pu.is_used ? (
-                        <span className="ml-2 text-xs text-muted-foreground">(used)</span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                <div className="flex flex-wrap gap-2.5">
+                  {myPowerups.map((pu, i) => {
+                    const meta = POWERUP_CATALOG.find(p => p.type === pu.type)
+                    const Icon = meta?.Icon
+                    const label = meta?.name ?? formatPowerupLabel(pu.type)
+
+                    return (
+                      <div
+                        key={i}
+                        className={`inline-flex items-center justify-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-all ${
+                          pu.is_used
+                            ? "border-border/40 bg-muted/20 text-muted-foreground/50"
+                            : "border-primary/20 bg-primary/5 text-foreground shadow-sm hover:border-primary/30 hover:bg-primary/10"
+                        }`}
+                      >
+                        {Icon ? <Icon className="h-4 w-4" /> : null}
+                        <span className="capitalize">{label}</span>
+                        {pu.is_used ? (
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
+                            (Used)
+                          </span>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </section>
 
             <section>
-              <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <h3 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 Team inventory
               </h3>
               {teamPowerups.length === 0 ? (
-                <p className="text-sm italic text-muted-foreground">No team powerups yet.</p>
+                <div className="flex items-center justify-center rounded-xl border border-dashed border-border/50 bg-muted/5 py-8">
+                  <p className="text-sm italic text-muted-foreground">No team powerups yet.</p>
+                </div>
               ) : (
-                <ul className="flex flex-col gap-2">
-                  {teamPowerups.map((pu, i) => {
-                    const isMe = pu.owner_account_id === userId
-                    return (
-                      <li
-                        key={i}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm"
-                      >
-                        <span className="font-medium capitalize">{formatPowerupLabel(pu.type)}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {isMe ? "You" : resolveName(pu.owner_account_id)}
-                          {pu.is_used ? " · used" : ""}
-                        </span>
-                      </li>
-                    )
+                <div className="flex flex-wrap gap-2.5">
+                  {Array.from(
+                    teamPowerups.reduce((acc, pu) => {
+                      acc.set(pu.type, (acc.get(pu.type) ?? 0) + 1)
+                      return acc
+                    }, new Map<string, number>()).entries()
+                  ).map(([type, count], i) => {
+                      const meta = POWERUP_CATALOG.find(p => p.type === type)
+                      const Icon = meta?.Icon
+                      const label = meta?.name ?? formatPowerupLabel(type as any)
+
+                      return (
+                        <div
+                          key={i}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-full border border-border/60 bg-muted/10 px-4 py-1.5 text-sm font-medium text-foreground shadow-sm transition-all hover:bg-muted/20"
+                        >
+                          {Icon ? <Icon className="h-4 w-4 text-muted-foreground/80" /> : null}
+                          <span className="capitalize">{label}</span>
+                          {count > 1 && (
+                            <span className="ml-1 font-semibold text-muted-foreground/70">
+                              x{count}
+                            </span>
+                          )}
+                        </div>
+                      )
                   })}
-                </ul>
+                </div>
               )}
             </section>
           </div>

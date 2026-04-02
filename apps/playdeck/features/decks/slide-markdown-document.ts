@@ -5,6 +5,7 @@ import {
   tryParsePollFromSlideBody,
 } from "@/features/decks/parse-slide-poll"
 import { parseQuestionSlideBody } from "@/features/decks/parse-slide-question"
+import { tryParseCodeFromSlideBody } from "@/features/decks/parse-slide-code"
 import { slideMarkdownToSafeHtml } from "@/features/decks/render-slide-markdown"
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 
@@ -21,7 +22,8 @@ export function parseMarkdownDocumentToSlides(md?: string | null): ParsedSlide[]
   const normalized = (md ?? "").replace(/\r\n/g, "\n")
   if (normalized.trim() === "") return []
 
-  const chunks = normalized.split("\n---\n")
+  const clean = normalized.replace(/^---\n?/, "")
+  const chunks = clean.split("\n---\n")
   return chunks.map((chunk) => parseChunk(chunk))
 }
 
@@ -112,6 +114,7 @@ export function deckSlidesToRevealModels(
         importedImage: null,
         poll: null,
         question: null,
+        code: null,
         interactiveError: imported.block,
       }
     }
@@ -123,6 +126,7 @@ export function deckSlidesToRevealModels(
         importedImage: imported.block,
         poll: null,
         question: null,
+        code: null,
         interactiveError: null,
       }
     }
@@ -139,6 +143,7 @@ export function deckSlidesToRevealModels(
         importedImage: null,
         poll: null,
         question: null,
+        code: null,
         interactiveError: question.block,
       }
     }
@@ -150,6 +155,20 @@ export function deckSlidesToRevealModels(
         importedImage: null,
         poll: null,
         question: question.block,
+        code: null,
+        interactiveError: null,
+      }
+    }
+
+    const rawCode = tryParseCodeFromSlideBody(s.body)
+    if (rawCode) {
+      return {
+        title: s.title,
+        html: "",
+        importedImage: null,
+        poll: null,
+        question: null,
+        code: rawCode,
         interactiveError: null,
       }
     }
@@ -162,6 +181,7 @@ export function deckSlidesToRevealModels(
         importedImage: null,
         poll: null,
         question: null,
+        code: null,
         interactiveError: null,
       }
     }
@@ -184,6 +204,7 @@ export function deckSlidesToRevealModels(
       importedImage: null,
       poll,
       question: null,
+      code: null,
       interactiveError: null,
     }
   })

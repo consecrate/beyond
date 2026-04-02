@@ -4,7 +4,7 @@ Next.js
 TypeScript
 Tailwind + shadcn/ui
 reveal.js
-Supabase Postgres + Realtime
+UploadThing (slide image hosting); Jazz (deck sync)
 Monaco
 Judge0 CE
 

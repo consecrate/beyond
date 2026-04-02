@@ -39,8 +39,25 @@ function parseChunk(chunk: string): { title: string; body: string } {
   }
 }
 
+/** If pos falls inside a `\\n---\\n` separator, move to the first index after it so chunk bounds stay in one slide. */
+function normalizePosOutOfSlideSeparator(doc: string, pos: number): number {
+  const p = Math.min(Math.max(0, pos), doc.length)
+  const sepStart = doc.lastIndexOf(SLIDE_SEPARATOR, p)
+  if (
+    sepStart !== -1 &&
+    p >= sepStart &&
+    p < sepStart + SLIDE_SEPARATOR.length
+  ) {
+    return sepStart + SLIDE_SEPARATOR.length
+  }
+  return p
+}
+
 function findSlideChunk(doc: string, pos: number): SlideChunkInfo {
-  const safePos = Math.min(Math.max(0, pos), doc.length)
+  const safePos = normalizePosOutOfSlideSeparator(
+    doc,
+    Math.min(Math.max(0, pos), doc.length),
+  )
   const fromMarker = doc.lastIndexOf(SLIDE_SEPARATOR, safePos - 1)
   const toMarker = doc.indexOf(SLIDE_SEPARATOR, safePos)
   const from = fromMarker === -1 ? 0 : fromMarker + SLIDE_SEPARATOR.length

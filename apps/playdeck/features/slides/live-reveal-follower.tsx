@@ -34,6 +34,7 @@ import { RevealSlideBody } from "@/features/slides/deck-reveal-presenter"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { CodeSlideCard } from "@/features/slides/code-slide-card"
 import { BattleLog } from "@/features/slides/battle-log"
 import { BattlePodium } from "@/features/slides/battle-podium"
 import { getQuarterStrikeHiddenCanonicalIndex } from "@/features/slides/battle-powerup-helpers"
@@ -787,6 +788,22 @@ export function LiveRevealFollower({
                       />
                     )
                   })()}
+                </div>
+              </div>
+            ) : null}
+
+            {slides[revealIndex]?.code ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center">
+                    <CodeSlideCard
+                      block={slides[revealIndex].code!}
+                      layout="overlay"
+                    />
+                  </div>
                 </div>
               </div>
             ) : null}

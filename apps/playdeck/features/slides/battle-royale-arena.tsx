@@ -2,10 +2,14 @@ import { useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import type { Loaded } from "jazz-tools"
 
+import {
+  getBattleLockedMap,
+  getBattleTargetsMap,
+} from "@/features/jazz/battle-state-targets"
 import type { BattleState, LiveSession, Team } from "@/features/jazz/schema"
 import { formatPowerupLabel } from "@/features/slides/powerup-meta"
 import { Button, cn } from "@beyond/design-system"
-import { Heart, Swords, Target, Loader2 } from "lucide-react"
+import { Heart, Swords, Target, Loader2, Lock } from "lucide-react"
 
 export type BattleRoyaleArenaProps = {
   liveSession: Loaded<typeof LiveSession>
@@ -40,11 +44,13 @@ function TeamTotem({
   isRight,
   target,
   powerupLine,
+  isLocked,
 }: {
   team: Loaded<typeof Team>
   isRight: boolean
   target: Loaded<typeof Team> | null
   powerupLine: string | null
+  isLocked: boolean
 }) {
   const isDown = team.hp === undefined || team.hp <= 0
 
@@ -73,6 +79,18 @@ function TeamTotem({
           )}
         >
           Targets: {target.name}
+        </div>
+      )}
+
+      {isLocked && !isDown && (
+        <div
+          className={cn(
+            "absolute -top-2.5 flex items-center gap-1 whitespace-nowrap rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary shadow-sm",
+            isRight ? "right-3" : "left-3",
+          )}
+        >
+          <Lock className="h-3 w-3" />
+          Locked In
         </div>
       )}
 
@@ -151,8 +169,8 @@ export function BattleRoyaleArena({
     )
   }
 
-  let targets = battleState.targets ?? {}
-  if (typeof targets !== "object" || targets === null) targets = {}
+  const targets = getBattleTargetsMap(battleState)
+  const lockedTeams = getBattleLockedMap(battleState)
 
   const leftTeams = teams.filter((_, i) => i % 2 === 0)
   const rightTeams = teams.filter((_, i) => i % 2 === 1)
@@ -193,6 +211,7 @@ export function BattleRoyaleArena({
                 isRight={false}
                 target={targetTeam ?? null}
                 powerupLine={totemPowerup(t)}
+                isLocked={!!lockedTeams[t.id]}
               />
             )
           })}
@@ -243,6 +262,7 @@ export function BattleRoyaleArena({
                 isRight={true}
                 target={targetTeam ?? null}
                 powerupLine={totemPowerup(t)}
+                isLocked={!!lockedTeams[t.id]}
               />
             )
           })}
@@ -265,6 +285,7 @@ export function BattleRoyaleArena({
                 isRight={isRight}
                 target={targetTeam ?? null}
                 powerupLine={totemPowerup(t)}
+                isLocked={!!lockedTeams[t.id]}
               />
             )
           })}

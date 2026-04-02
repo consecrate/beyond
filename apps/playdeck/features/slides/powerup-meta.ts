@@ -27,7 +27,7 @@ export type PowerupCatalogEntry = {
 export const POWERUP_CATALOG: readonly PowerupCatalogEntry[] = [
   {
     type: "1/4",
-    name: "50/50",
+    name: "1/4 Powerup",
     desc: "Eliminate 1 incorrect option.",
     cost: 20,
     Icon: Scissors,
@@ -90,6 +90,18 @@ export const POWERUP_CATALOG: readonly PowerupCatalogEntry[] = [
     colorToken: "red",
   },
 ] as const
+
+/** HP-related types multiple teammates may each pick once per round; others are one per team. */
+export const STACKABLE_POWERUP_TYPES = new Set<z.infer<typeof PowerupType>>([
+  "healing_potion",
+  "step_up",
+])
+
+export function isPowerupTypeStackable(
+  t: z.infer<typeof PowerupType>,
+): boolean {
+  return STACKABLE_POWERUP_TYPES.has(t)
+}
 
 export function formatPowerupLabel(type: string): string {
   return type.replace("_", " ")

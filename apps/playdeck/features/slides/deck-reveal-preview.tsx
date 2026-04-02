@@ -1,15 +1,11 @@
 "use client"
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  memo,
-} from "react"
+/* eslint-disable react-hooks/refs -- reveal.js + Jazz account stability need ref patterns ESLint cannot prove safe */
+
+import { useCallback, useEffect, useRef, useState, memo } from "react"
 import { useAccount } from "jazz-tools/react"
 
+import { importedSlideRevealBackgroundUrl } from "@/features/decks/parse-slide-import"
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
 import { InteractiveErrorCard } from "@/features/slides/interactive-error-card"
 import {
@@ -18,18 +14,20 @@ import {
 } from "@/features/slides/imported-slide-frame"
 import { PollSlideCard } from "@/features/slides/poll-slide-card"
 import { QuestionSlideCard } from "@/features/slides/question-slide-card"
+import { CodeSlideCard } from "@/features/slides/code-slide-card"
 import { useRevealAutoLayout } from "@/features/slides/use-reveal-auto-layout"
 import { useJazzImages } from "@/features/slides/use-jazz-images"
+import type { Loaded } from "jazz-tools"
+
 import { PlaydeckAccount } from "@/features/jazz/schema"
 import { Button, cn } from "@beyond/design-system"
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import Reveal from "reveal.js"
-import type { RevealApi } from "reveal.js"
+import type { RevealApi, RevealConfig } from "reveal.js"
 
 import "reveal.js/reveal.css"
 import "reveal.js/theme/black.css"
 
-const SYNC_DEBOUNCE_MS = 80
 const LAZY_RADIUS = 2
 
 export type DeckRevealPreviewProps = {
@@ -49,7 +47,7 @@ const SlideBody = memo(function SlideBody({
   slide: RevealSlideModel
   slideIndex: number
   activeIndex: number
-  me: any // Jazz account type is complex, use any for simplicity
+  me: Loaded<typeof PlaydeckAccount> | null | undefined
 }) {
   const show = Math.abs(slideIndex - activeIndex) <= LAZY_RADIUS
   const containerRef = useRef<HTMLDivElement>(null)
@@ -57,11 +55,19 @@ const SlideBody = memo(function SlideBody({
   // Each slide needs its own useJazzImages for the images to work correctly
   useJazzImages(containerRef, me, slide.html)
 
-  if (slide.poll || slide.question || slide.interactiveError) {
+  if (slide.poll || slide.question || slide.interactiveError || slide.code) {
     return <div className="h-0 w-0 overflow-hidden opacity-0" aria-hidden />
   }
 
   if (!show) {
+    if (
+      slide.importedImage &&
+      importedSlideRevealBackgroundUrl(slide.importedImage.src)
+    ) {
+      return (
+        <div className="h-0 w-0 overflow-hidden opacity-0" aria-hidden />
+      )
+    }
     return (
       <div
         className="flex min-h-[min(70vh,700px)] w-full max-w-4xl items-center justify-center"
@@ -73,6 +79,17 @@ const SlideBody = memo(function SlideBody({
   }
 
   if (slide.importedImage) {
+    const bgUrl = importedSlideRevealBackgroundUrl(slide.importedImage.src)
+    if (bgUrl) {
+      return (
+        <div className="flex h-full w-full min-h-0 flex-col">
+          <span className="sr-only">
+            {slide.title.trim() || "Imported slide"}
+          </span>
+          <div className="min-h-0 flex-1" aria-hidden />
+        </div>
+      )
+    }
     return (
       <ImportedSlideFrame
         source={slide.importedImage.src}
@@ -111,7 +128,7 @@ export function DeckRevealPreview({
   const deckApiRef = useRef<RevealApi | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const onSlideChangedHandlerRef = useRef<() => void>(() => {})
-  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeIndexRef = useRef(0)
 
   const numSlides = slides.length
 
@@ -125,6 +142,10 @@ export function DeckRevealPreview({
   useEffect(() => {
     onSlideChangedHandlerRef.current = onSlideChanged
   }, [onSlideChanged])
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex
+  }, [activeIndex])
 
   const requestRevealLayout = useCallback(() => {
     const deck = deckApiRef.current
@@ -146,7 +167,7 @@ export function DeckRevealPreview({
     if (!revealRef.current || numSlides < 1) return
 
     const el = revealRef.current
-    const deck = new Reveal(el, {
+    const revealOptions: RevealConfig = {
       embedded: true,
       hash: false,
       controls: false,
@@ -156,8 +177,9 @@ export function DeckRevealPreview({
       backgroundTransition: "fade",
       width: 960,
       height: 700,
-      margin: 0.04,
-    })
+      margin: 0,
+    }
+    const deck = new Reveal(el, revealOptions)
 
     const wrapped = () => onSlideChangedHandlerRef.current()
 
@@ -166,7 +188,11 @@ export function DeckRevealPreview({
       .initialize()
       .then(() => {
         if (cancelled) return
-        deck.slide(0, 0)
+        const start = Math.min(
+          Math.max(0, activeIndexRef.current),
+          Math.max(0, numSlides - 1),
+        )
+        deck.slide(start, 0)
         deckApiRef.current = deck
         setActiveIndex(deck.getIndices().h)
         setRevealReady(true)
@@ -194,21 +220,6 @@ export function DeckRevealPreview({
       el.removeEventListener("slidechanged", wrapped)
       deck.destroy()
       deckApiRef.current = null
-    }
-  }, [numSlides])
-
-  useLayoutEffect(() => {
-    if (numSlides < 1) return
-    const deck = deckApiRef.current
-    if (!deck) return
-    if (syncTimerRef.current !== null) clearTimeout(syncTimerRef.current)
-    syncTimerRef.current = setTimeout(() => {
-      syncTimerRef.current = null
-      deck.sync()
-      deck.layout()
-    }, SYNC_DEBOUNCE_MS)
-    return () => {
-      if (syncTimerRef.current !== null) clearTimeout(syncTimerRef.current)
     }
   }, [slidesContentKey, numSlides])
 
@@ -286,20 +297,38 @@ export function DeckRevealPreview({
             <div ref={viewportRef} className="reveal-viewport h-full min-h-0 w-full">
               <div ref={revealRef} className="reveal h-full min-h-[50vh]">
                 <div className="slides">
-                  {slides.map((slide, i) => (
-                    <section
-                      key={i}
-                      className="flex items-center justify-center !p-4"
-                      data-background-color="#0d1117"
-                    >
-                      <SlideBody
-                        slide={slide}
-                        slideIndex={i}
-                        activeIndex={activeIndex}
-                        me={stableMeRef.current}
-                      />
-                    </section>
-                  ))}
+                  {slides.map((slide, i) => {
+                    const importedBgUrl =
+                      slide.importedImage &&
+                      importedSlideRevealBackgroundUrl(
+                        slide.importedImage.src,
+                      )
+                    return (
+                      <section
+                        key={i}
+                        className={cn(
+                          "flex items-center justify-center",
+                          slide.importedImage ? "!p-0" : "!p-4",
+                        )}
+                        data-background-color="#0d1117"
+                        {...(importedBgUrl
+                          ? {
+                              "data-background-image": importedBgUrl,
+                              "data-background-size": "cover",
+                              "data-background-position": "center",
+                              "data-background-repeat": "no-repeat",
+                            }
+                          : {})}
+                      >
+                        <SlideBody
+                          slide={slide}
+                          slideIndex={i}
+                          activeIndex={activeIndex}
+                          me={stableMeRef.current}
+                        />
+                      </section>
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -366,6 +395,22 @@ export function DeckRevealPreview({
                       )}
                       answeredCount={0}
                       myAnswer={null}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {slides[activeIndex]?.code ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-background"
+                role="presentation"
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-8 md:px-10">
+                  <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center">
+                    <CodeSlideCard
+                      block={slides[activeIndex].code!}
+                      layout="overlay"
                     />
                   </div>
                 </div>

@@ -5,18 +5,25 @@ import { createJazzTestAccount } from "jazz-tools/testing"
 import { coValueId } from "@/features/decks/deck-map"
 import { replaceSlidesFromMarkdown } from "@/features/decks/jazz-deck-mutations"
 import { deckSlidesToRevealModels, parseMarkdownDocumentToSlides } from "@/features/decks/slide-markdown-document"
+import { getBattleTargetsMap } from "@/features/jazz/battle-state-targets"
 import {
   aggregateQuestionCounts,
+  assignTeamLeader,
   countQuestionAnswers,
   hasAnotherOpenQuestion,
+  joinLiveSession,
+  normalizeBattleStateIfMissingPowerupSelections,
   questionStatus,
   replaceImportedLiveSlideSource,
+  selectBattleTarget,
+  startGameplay,
   startLiveSession,
   startQuestion,
+  startTeamFormation,
   stopQuestion,
   submitQuestionAnswer,
 } from "@/features/jazz/live-session-mutations"
-import { PlaydeckAccount } from "@/features/jazz/schema"
+import { BattleState, PlaydeckAccount } from "@/features/jazz/schema"
 import { createDeckFromTitle } from "@/features/decks"
 
 async function setupLiveQuestion(md: string) {
@@ -267,5 +274,200 @@ describe("question live-session mutations", () => {
     expect(liveStart.liveSession.markdown).toContain(
       "#import https://cdn.example.com/slide-a.webp",
     )
+  })
+})
+
+describe("battle powerup legacy battle_state migration", () => {
+  it("normalizes battle_state missing powerup_selections without throwing", async () => {
+    const presenter = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "Presenter" },
+    })
+    assertLoaded(presenter)
+    assertLoaded(presenter.root)
+    const created = createDeckFromTitle(presenter, "Battle deck")
+    expect(created.ok).toBe(true)
+    const decks = presenter.root.decks
+    assertLoaded(decks)
+    const deck = decks[0]
+    assertLoaded(deck)
+    const liveStart = startLiveSession(presenter, deck, 0)
+    expect(liveStart.ok).toBe(true)
+    if (!liveStart.ok) throw new Error("Live session failed to start")
+    const liveSession = liveStart.liveSession
+    const owner = liveSession.$jazz.owner
+    const legacy = BattleState.create(
+      { phase: "target_selection", targets: { team_1: "team_2" } },
+      owner,
+    )
+    liveSession.$jazz.applyDiff({
+      game_phase: "battle_royale",
+      battle_state: legacy,
+    })
+
+    const before = liveSession.battle_state
+    expect(before).not.toBeNull()
+    assertLoaded(before!)
+    const beforeMissing =
+      !before!.$jazz.has("powerup_selections") ||
+      !before!.powerup_selections ||
+      !before!.powerup_selections.$isLoaded
+
+    const after = normalizeBattleStateIfMissingPowerupSelections(liveSession)
+    expect(after).not.toBeNull()
+    assertLoaded(after!)
+    const list = after!.powerup_selections
+    expect(list).not.toBeNull()
+    assertLoaded(list!)
+
+    if (beforeMissing) {
+      expect(after!.phase).toBe("target_selection")
+      expect(getBattleTargetsMap(after!)).toEqual({})
+    }
+  })
+})
+
+describe("battle target selection", () => {
+  it("keeps both teams' targets when two leaders select sequentially", async () => {
+    const presenter = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "Presenter" },
+    })
+    const leaderA = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "LeaderA" },
+    })
+    const leaderB = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "LeaderB" },
+    })
+    assertLoaded(presenter)
+    assertLoaded(presenter.root)
+    assertLoaded(leaderA)
+    assertLoaded(leaderB)
+
+    const created = createDeckFromTitle(presenter, "Battle deck")
+    expect(created.ok).toBe(true)
+    const decks = presenter.root.decks
+    assertLoaded(decks)
+    const deck = decks[0]
+    assertLoaded(deck)
+    const liveStart = startLiveSession(presenter, deck, 0)
+    expect(liveStart.ok).toBe(true)
+    if (!liveStart.ok) throw new Error("Live session failed to start")
+    const liveSession = liveStart.liveSession
+
+    startTeamFormation(presenter, liveSession, 2)
+    joinLiveSession(leaderA, liveSession)
+    joinLiveSession(leaderB, liveSession)
+
+    assignTeamLeader(presenter, liveSession, "team_1", leaderA.$jazz.id)
+    assignTeamLeader(presenter, liveSession, "team_2", leaderB.$jazz.id)
+
+    startGameplay(presenter, liveSession)
+
+    const bs = liveSession.battle_state
+    expect(bs).not.toBeNull()
+    assertLoaded(bs!)
+
+    expect(selectBattleTarget(leaderA, liveSession, "team_2")).toEqual({ ok: true })
+    expect(selectBattleTarget(leaderB, liveSession, "team_1")).toEqual({ ok: true })
+
+    expect(getBattleTargetsMap(bs!)).toEqual({
+      team_1: "team_2",
+      team_2: "team_1",
+    })
+  })
+
+  it("assignTeamLeader clears the account as leader from any other team", async () => {
+    const presenter = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "Presenter" },
+    })
+    const leaderA = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "LeaderA" },
+    })
+    assertLoaded(presenter)
+    assertLoaded(presenter.root)
+    assertLoaded(leaderA)
+
+    const created = createDeckFromTitle(presenter, "Battle deck")
+    expect(created.ok).toBe(true)
+    const decks = presenter.root.decks
+    assertLoaded(decks)
+    const deck = decks[0]
+    assertLoaded(deck)
+    const liveStart = startLiveSession(presenter, deck, 0)
+    expect(liveStart.ok).toBe(true)
+    if (!liveStart.ok) throw new Error("Live session failed to start")
+    const liveSession = liveStart.liveSession
+
+    startTeamFormation(presenter, liveSession, 2)
+    joinLiveSession(leaderA, liveSession)
+
+    assignTeamLeader(presenter, liveSession, "team_1", leaderA.$jazz.id)
+    assignTeamLeader(presenter, liveSession, "team_2", leaderA.$jazz.id)
+
+    const teams = liveSession.teams
+    expect(teams).not.toBeNull()
+    assertLoaded(teams!)
+    const t1 = [...teams].find((t) => t && t.$isLoaded && t.id === "team_1")
+    const t2 = [...teams].find((t) => t && t.$isLoaded && t.id === "team_2")
+    expect(t1?.leader_account_id).toBeUndefined()
+    expect(t2?.leader_account_id).toBe(leaderA.$jazz.id)
+  })
+
+  it("selectBattleTarget uses the leader's SessionPlayer.team_id, not the first team with matching leader_account_id", async () => {
+    const presenter = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "Presenter" },
+    })
+    const leaderA = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "LeaderA" },
+    })
+    const leaderB = await createJazzTestAccount({
+      AccountSchema: PlaydeckAccount,
+      creationProps: { name: "LeaderB" },
+    })
+    assertLoaded(presenter)
+    assertLoaded(presenter.root)
+    assertLoaded(leaderA)
+    assertLoaded(leaderB)
+
+    const created = createDeckFromTitle(presenter, "Battle deck")
+    expect(created.ok).toBe(true)
+    const decks = presenter.root.decks
+    assertLoaded(decks)
+    const deck = decks[0]
+    assertLoaded(deck)
+    const liveStart = startLiveSession(presenter, deck, 0)
+    expect(liveStart.ok).toBe(true)
+    if (!liveStart.ok) throw new Error("Live session failed to start")
+    const liveSession = liveStart.liveSession
+
+    startTeamFormation(presenter, liveSession, 2)
+    joinLiveSession(leaderA, liveSession)
+    joinLiveSession(leaderB, liveSession)
+
+    assignTeamLeader(presenter, liveSession, "team_1", leaderB.$jazz.id)
+    assignTeamLeader(presenter, liveSession, "team_2", leaderA.$jazz.id)
+
+    const teams = liveSession.teams
+    expect(teams).not.toBeNull()
+    assertLoaded(teams!)
+    const team1 = [...teams].find((t) => t && t.$isLoaded && t.id === "team_1")
+    expect(team1).toBeDefined()
+    team1!.$jazz.applyDiff({ leader_account_id: leaderA.$jazz.id })
+
+    startGameplay(presenter, liveSession)
+
+    const bs = liveSession.battle_state
+    expect(bs).not.toBeNull()
+    assertLoaded(bs!)
+
+    expect(selectBattleTarget(leaderA, liveSession, "team_1")).toEqual({ ok: true })
+    expect(getBattleTargetsMap(bs!)).toEqual({ team_2: "team_1" })
   })
 })

@@ -45,15 +45,6 @@ export function PowerupStoreCatalog({
 }: PowerupStoreCatalogProps) {
   const isEmbed = variant === "embed"
 
-  const resolveMember = (accountId: string): Loaded<typeof SessionPlayer> | undefined => {
-    const players = liveSession.joined_players
-    if (!players?.$isLoaded) return undefined
-    return Array.from(players).find(
-      (p): p is Loaded<typeof SessionPlayer> =>
-        !!(p && p.$isLoaded && p.account_id === accountId),
-    )
-  }
-
   return (
     <div
       className={cn(
@@ -68,11 +59,7 @@ export function PowerupStoreCatalog({
           </h2>
           <p className="mt-2 font-medium text-muted-foreground">Equip your team for the battle ahead.</p>
         </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Browse the catalog. Purchases follow the rules above.
-        </p>
-      )}
+      ) : null}
 
       {readOnlyNotice ? (
         <p className="w-full rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-center text-sm text-muted-foreground">
@@ -85,7 +72,7 @@ export function PowerupStoreCatalog({
           <Star className="h-6 w-6 text-amber-500 fill-amber-500" />
           <span className="text-2xl font-bold text-amber-500">{myPlayPoints}</span>
           <span className="ml-1 mt-1 text-sm font-semibold uppercase tracking-widest text-amber-500 opacity-70">
-            Your PP
+            Your PlayPoints
           </span>
         </div>
       </div>
@@ -136,7 +123,7 @@ export function PowerupStoreCatalog({
                   canAfford ? "bg-amber-500/20 text-amber-500" : "bg-muted text-muted-foreground",
                 )}
               >
-                {pu.cost} PP
+                {pu.cost} PlayPoints
               </span>
             </button>
           )
@@ -149,20 +136,22 @@ export function PowerupStoreCatalog({
             Team inventory
           </h3>
           <div className="flex flex-wrap gap-2">
-            {teamPowerups.map((pu, i) => {
-              const member = resolveMember(pu.owner_account_id)
-              return (
+            {Array.from(
+              teamPowerups.reduce((acc, pu) => {
+                acc.set(pu.type, (acc.get(pu.type) ?? 0) + 1)
+                return acc
+              }, new Map<string, number>()).entries()
+            ).map(([type, count], i) => {
+                const meta = POWERUP_CATALOG.find(p => p.type === type)
+                return (
                 <div
                   key={i}
                   className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-sm font-medium"
                 >
-                  <span className="capitalize">{formatPowerupLabel(pu.type)}</span>
-                  <span className="opacity-40">→</span>
-                  <span className="max-w-[100px] truncate font-semibold text-primary">
-                    {member ? member.name : "Member"}
-                  </span>
+                  <span className="capitalize">{meta?.name ?? formatPowerupLabel(type as any)}</span>
+                  {count > 1 && <span className="text-muted-foreground opacity-70">x{count}</span>}
                 </div>
-              )
+                )
             })}
           </div>
         </div>

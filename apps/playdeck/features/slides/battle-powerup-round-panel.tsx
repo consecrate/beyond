@@ -14,9 +14,12 @@ import type {
   Team,
 } from "@/features/jazz/schema"
 import { claimBattlePowerup, clearBattlePowerupClaim } from "@/features/jazz/live-session-mutations"
-import { POWERUP_CATALOG } from "@/features/slides/powerup-meta"
+import {
+  POWERUP_CATALOG,
+  isPowerupTypeStackable,
+} from "@/features/slides/powerup-meta"
 import { Button, cn } from "@beyond/design-system"
-import { Loader2, Sparkles, X } from "lucide-react"
+import { Loader2, X } from "lucide-react"
 
 // ---------------------------------------------------------------------------
 // Color accent helpers — maps the catalog colorToken to Tailwind utility classes
@@ -24,11 +27,21 @@ import { Loader2, Sparkles, X } from "lucide-react"
 // ---------------------------------------------------------------------------
 const COLOR_CLASSES: Record<
   string,
-  { border: string; bg: string; icon: string; badge: string; owned: string }
+  {
+    border: string
+    bg: string
+    hoverBorder: string
+    hoverBg: string
+    icon: string
+    badge: string
+    owned: string
+  }
 > = {
   amber: {
     border: "border-amber-500/30",
     bg: "bg-amber-500/10",
+    hoverBorder: "hover:border-amber-500/30",
+    hoverBg: "hover:bg-amber-500/10",
     icon: "bg-amber-500/15 text-amber-500",
     badge: "bg-amber-500/20 text-amber-600 dark:text-amber-400",
     owned: "text-amber-600 dark:text-amber-400",
@@ -36,6 +49,8 @@ const COLOR_CLASSES: Record<
   sky: {
     border: "border-sky-500/30",
     bg: "bg-sky-500/10",
+    hoverBorder: "hover:border-sky-500/30",
+    hoverBg: "hover:bg-sky-500/10",
     icon: "bg-sky-500/15 text-sky-500",
     badge: "bg-sky-500/20 text-sky-600 dark:text-sky-400",
     owned: "text-sky-600 dark:text-sky-400",
@@ -43,6 +58,8 @@ const COLOR_CLASSES: Record<
   emerald: {
     border: "border-emerald-500/30",
     bg: "bg-emerald-500/10",
+    hoverBorder: "hover:border-emerald-500/30",
+    hoverBg: "hover:bg-emerald-500/10",
     icon: "bg-emerald-500/15 text-emerald-500",
     badge: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400",
     owned: "text-emerald-600 dark:text-emerald-400",
@@ -50,6 +67,8 @@ const COLOR_CLASSES: Record<
   rose: {
     border: "border-rose-500/30",
     bg: "bg-rose-500/10",
+    hoverBorder: "hover:border-rose-500/30",
+    hoverBg: "hover:bg-rose-500/10",
     icon: "bg-rose-500/15 text-rose-500",
     badge: "bg-rose-500/20 text-rose-600 dark:text-rose-400",
     owned: "text-rose-600 dark:text-rose-400",
@@ -57,6 +76,8 @@ const COLOR_CLASSES: Record<
   violet: {
     border: "border-violet-500/30",
     bg: "bg-violet-500/10",
+    hoverBorder: "hover:border-violet-500/30",
+    hoverBg: "hover:bg-violet-500/10",
     icon: "bg-violet-500/15 text-violet-500",
     badge: "bg-violet-500/20 text-violet-600 dark:text-violet-400",
     owned: "text-violet-600 dark:text-violet-400",
@@ -64,6 +85,8 @@ const COLOR_CLASSES: Record<
   orange: {
     border: "border-orange-500/30",
     bg: "bg-orange-500/10",
+    hoverBorder: "hover:border-orange-500/30",
+    hoverBg: "hover:bg-orange-500/10",
     icon: "bg-orange-500/15 text-orange-500",
     badge: "bg-orange-500/20 text-orange-600 dark:text-orange-400",
     owned: "text-orange-600 dark:text-orange-400",
@@ -71,6 +94,8 @@ const COLOR_CLASSES: Record<
   pink: {
     border: "border-pink-500/30",
     bg: "bg-pink-500/10",
+    hoverBorder: "hover:border-pink-500/30",
+    hoverBg: "hover:bg-pink-500/10",
     icon: "bg-pink-500/15 text-pink-500",
     badge: "bg-pink-500/20 text-pink-600 dark:text-pink-400",
     owned: "text-pink-600 dark:text-pink-400",
@@ -78,6 +103,8 @@ const COLOR_CLASSES: Record<
   red: {
     border: "border-red-500/30",
     bg: "bg-red-500/10",
+    hoverBorder: "hover:border-red-500/30",
+    hoverBg: "hover:bg-red-500/10",
     icon: "bg-red-500/15 text-red-500",
     badge: "bg-red-500/20 text-red-600 dark:text-red-400",
     owned: "text-red-600 dark:text-red-400",
@@ -88,7 +115,8 @@ const COLOR_CLASSES: Record<
 // Helpers
 // ---------------------------------------------------------------------------
 
-function selectionForMember(
+/** Current user’s battle power-up claim for this round, if any. */
+export function getBattlePowerupSelectionForMember(
   liveSession: Loaded<typeof LiveSession>,
   teamId: string,
   accountId: string,
@@ -111,12 +139,6 @@ function selectionForMember(
 }
 
 /**
- * HP-boosting types that multiple teammates may each pick once per round.
- * All other types are capped at one picker per team.
- */
-const STACKABLE_POWERUP_TYPES = new Set(["healing_potion", "step_up"])
-
-/**
  * Returns true if a teammate (same team, different account) has already claimed this
  * powerup type this round AND the type is not stackable.
  */
@@ -126,7 +148,7 @@ function isTypeTakenByTeammate(
   myAccountId: string,
   powerupType: z.infer<typeof PowerupType>,
 ): boolean {
-  if (STACKABLE_POWERUP_TYPES.has(powerupType)) return false
+  if (isPowerupTypeStackable(powerupType)) return false
   const bs = liveSession.battle_state
   if (!bs || !bs.$isLoaded) return false
   const list = bs.powerup_selections
@@ -149,6 +171,8 @@ export type BattlePowerupRoundPanelProps = {
   me: Loaded<typeof PlaydeckAccount>
   teams: Loaded<typeof Team>[]
   myTeam: Loaded<typeof Team>
+  /** When false, the option grid is hidden; status, errors, and clear remain visible. */
+  showChooser?: boolean
 }
 
 export function BattlePowerupRoundPanel({
@@ -156,6 +180,7 @@ export function BattlePowerupRoundPanel({
   me,
   teams,
   myTeam,
+  showChooser = true,
 }: BattlePowerupRoundPanelProps) {
   const [err, setErr] = useState<string | null>(null)
   const [pending, start] = useTransition()
@@ -179,7 +204,7 @@ export function BattlePowerupRoundPanel({
     return m
   }, [teamPowerups, userId])
 
-  const mySelection = selectionForMember(liveSession, myTeam.id, userId)
+  const mySelection = getBattlePowerupSelectionForMember(liveSession, myTeam.id, userId)
 
   const resolvePlayerName = (accountId: string): string => {
     const players = liveSession.joined_players
@@ -224,18 +249,7 @@ export function BattlePowerupRoundPanel({
   const activeColors = activeEntry ? (COLOR_CLASSES[activeEntry.colorToken] ?? COLOR_CLASSES.amber) : null
 
   return (
-    <div className="mt-4 space-y-4 rounded-2xl border border-border bg-muted/20 p-4">
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-amber-500" aria-hidden />
-        <span className="text-sm font-bold uppercase tracking-widest text-foreground opacity-80">
-          Round Power-up
-        </span>
-      </div>
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Pick one power-up from your inventory to deploy this round.
-      </p>
-
+    <div className="space-y-4">
       {/* Error */}
       {err ? (
         <p
@@ -246,127 +260,131 @@ export function BattlePowerupRoundPanel({
         </p>
       ) : null}
 
-      {/* Active selection badge */}
+      {/* Active selection */}
       {mySelection && mySelection.$isLoaded && activeEntry && activeColors ? (
         <div
           className={cn(
-            "flex items-center gap-3 rounded-xl border-2 px-4 py-3",
+            "flex items-center gap-3 rounded-2xl border-2 bg-card px-4 py-3 shadow-sm",
             activeColors.border,
             activeColors.bg,
           )}
         >
           <span
             className={cn(
-              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl",
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
               activeColors.icon,
             )}
           >
             <activeEntry.Icon className="h-5 w-5" aria-hidden />
           </span>
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-bold text-foreground">{activeEntry.name}</p>
             <p className="text-xs text-muted-foreground">
-              by {resolvePlayerName(mySelection.picker_account_id)}
+              Chosen by {resolvePlayerName(mySelection.picker_account_id)}
               {mySelection.powerup_type === "healing_potion" && mySelection.healing_target_team_id
-                ? ` → Heal ${teams.find((t) => t.id === mySelection.healing_target_team_id)?.name ?? "?"}`
+                ? ` · Heal ${teams.find((t) => t.id === mySelection.healing_target_team_id)?.name ?? "?"}`
                 : ""}
             </p>
           </div>
-          <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", activeColors.badge)}>
-            active
+          <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold", activeColors.badge)}>
+            Selected
           </span>
         </div>
       ) : (
-        <p className="text-xs italic text-muted-foreground">No power-up chosen yet.</p>
+        <p className="text-sm text-muted-foreground">
+          No power-up selected for this round yet.
+        </p>
       )}
 
-      {/* Power-up grid */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {POWERUP_CATALOG.map((entry) => {
-          const owned = ownedByType.get(entry.type) ?? 0
-          const blockedByTeammate = isTypeTakenByTeammate(liveSession, myTeam.id, userId, entry.type)
-          const needsHealTarget = entry.type === "healing_potion"
-          const canPick = owned > 0 && !blockedByTeammate
-          const disabled = pending || !canPick || (needsHealTarget && !healTargetId)
+      {/* Power-up grid — desktop-first: fewer, wider cards */}
+      {showChooser ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {POWERUP_CATALOG.map((entry) => {
+            const owned = ownedByType.get(entry.type) ?? 0
+            const blockedByTeammate = isTypeTakenByTeammate(liveSession, myTeam.id, userId, entry.type)
+            const needsHealTarget = entry.type === "healing_potion"
+            const canPick = owned > 0 && !blockedByTeammate
+            const disabled = pending || !canPick || (needsHealTarget && !healTargetId)
 
-          const colors = COLOR_CLASSES[entry.colorToken] ?? COLOR_CLASSES.amber
-          const isSelected = mySelection?.$isLoaded && mySelection.powerup_type === entry.type
+            const colors = COLOR_CLASSES[entry.colorToken] ?? COLOR_CLASSES.amber
+            const isSelected = mySelection?.$isLoaded && mySelection.powerup_type === entry.type
 
-          return (
-            <div key={entry.type} className="flex flex-col gap-2">
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => claim(entry.type)}
-                className={cn(
-                  "relative flex flex-col items-start gap-2 rounded-2xl border-2 p-4 text-left transition-all duration-200",
-                  isSelected
-                    ? cn("border-2 shadow-md", colors.border, colors.bg)
-                    : canPick && !disabled
-                      ? cn(
-                          "border-border hover:-translate-y-0.5 hover:shadow-md active:scale-95",
-                          `hover:${colors.border}`,
-                          `hover:${colors.bg}`,
-                        )
-                      : "cursor-not-allowed border-border/40 bg-muted/10 opacity-50",
-                )}
-              >
-                {/* Icon */}
-                <span
+            return (
+              <div key={entry.type} className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => claim(entry.type)}
                   className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-xl",
-                    owned > 0 ? colors.icon : "bg-muted/40 text-muted-foreground",
+                    "relative flex min-h-38 flex-col items-start gap-2 rounded-2xl border-2 bg-card p-5 text-left shadow-sm transition-all duration-200",
+                    isSelected
+                      ? cn("shadow-md", colors.border, colors.bg)
+                      : canPick && !disabled
+                        ? cn(
+                            "border-border hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg active:scale-[0.99]",
+                            colors.hoverBorder,
+                            colors.hoverBg,
+                          )
+                        : "cursor-not-allowed border-border/40 bg-muted/10 opacity-60",
                   )}
                 >
-                  <entry.Icon className="h-5 w-5" aria-hidden />
-                </span>
-
-                {/* Name */}
-                <span className="text-sm font-bold leading-tight">{entry.name}</span>
-
-                {/* Desc */}
-                <span className="text-[11px] leading-snug text-muted-foreground line-clamp-2">
-                  {entry.desc}
-                </span>
-
-                {/* Owned badge */}
-                <span
-                  className={cn(
-                    "mt-auto rounded-full px-2 py-0.5 text-[10px] font-bold",
-                    owned > 0 ? colors.badge : "bg-muted/40 text-muted-foreground",
-                  )}
-                >
-                  {owned > 0 ? `${owned} owned` : "none"}
-                </span>
-
-                {/* "Taken" overlay */}
-                {blockedByTeammate ? (
-                  <span className="absolute inset-0 flex items-center justify-center rounded-2xl bg-background/70 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                    Taken by teammate
+                  {/* Icon */}
+                  <span
+                    className={cn(
+                      "flex h-10 w-10 items-center justify-center rounded-xl",
+                      owned > 0 ? colors.icon : "bg-muted/40 text-muted-foreground",
+                    )}
+                  >
+                    <entry.Icon className="h-5 w-5" aria-hidden />
                   </span>
-                ) : null}
-              </button>
 
-              {/* Heal target selector (only for healing_potion) */}
-              {needsHealTarget && owned > 0 ? (
-                <select
-                  className="w-full rounded-xl border border-input bg-background px-2.5 py-1.5 text-xs text-foreground"
-                  value={healTargetId}
-                  onChange={(e) => setHealTargetId(e.target.value)}
-                  aria-label="Heal which team?"
-                >
-                  <option value="">Heal who?</option>
-                  {healOptions.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              ) : null}
-            </div>
-          )
-        })}
-      </div>
+                  {/* Name */}
+                  <span className="text-sm font-bold leading-tight">{entry.name}</span>
+
+                  {/* Desc */}
+                  <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                    {entry.desc}
+                  </span>
+
+                  {/* Owned badge */}
+                  <span
+                    className={cn(
+                      "mt-auto rounded-full px-2 py-0.5 text-[10px] font-bold",
+                      owned > 0 ? colors.badge : "bg-muted/40 text-muted-foreground",
+                    )}
+                  >
+                    {owned > 0 ? `${owned} in inventory` : "None in inventory"}
+                  </span>
+
+                  {/* "Taken" overlay */}
+                  {blockedByTeammate ? (
+                    <span className="absolute inset-0 flex items-center justify-center rounded-2xl bg-background/80 px-4 text-center text-xs font-bold leading-relaxed text-amber-600 backdrop-blur-sm dark:bg-background/90 dark:text-amber-400">
+                      Already taken by a teammate<br />this round
+                    </span>
+                  ) : null}
+                </button>
+
+                {/* Heal target selector (only for healing_potion) */}
+                {needsHealTarget && owned > 0 ? (
+                  <select
+                    className="w-full rounded-xl border border-input bg-background px-2.5 py-2 text-xs text-foreground"
+                    value={healTargetId}
+                    onChange={(e) => setHealTargetId(e.target.value)}
+                    aria-label="Team to receive healing"
+                  >
+                    <option value="">Choose a team to heal</option>
+                    {healOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
 
       {/* Clear selection */}
       {mySelection?.status === "confirmed" && mySelection.picker_account_id === userId ? (
@@ -374,18 +392,18 @@ export function BattlePowerupRoundPanel({
           type="button"
           variant="outline"
           size="sm"
-          className="w-full rounded-xl"
+          className="w-full rounded-xl sm:w-auto"
           disabled={pending}
           onClick={clear}
         >
           <X className="mr-1.5 h-4 w-4" />
-          Clear my pick
+          Clear selection
         </Button>
       ) : null}
 
       {/* Loading */}
       {pending ? (
-        <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+        <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground sm:justify-start">
           <Loader2 className="h-4 w-4 animate-spin" />
           Updating…
         </p>

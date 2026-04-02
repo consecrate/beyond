@@ -26,7 +26,7 @@ import {
   replaceImportedSlideSource,
 } from "@/features/decks/parse-slide-import"
 import type { DeckSlideView } from "@/features/decks/deck-types"
-import { uploadImageToSupabase } from "@/features/decks/supabase-image-upload"
+import { uploadSlideImage } from "@/features/decks/uploadthing-image-upload"
 import { appendPollSlideMarkdown } from "@/features/decks/parse-slide-poll"
 import {
   appendQuestionSlideMarkdown,
@@ -82,11 +82,12 @@ export function DeckEditorWorkspace({
   const lastSavedRef = useRef(lastSavedMarkdown)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const meRef = useRef(me)
+  /* eslint-disable react-hooks/refs -- sync refs during render avoids autosave / image-upload races */
   meRef.current = me
-
   // Sync refs immediately (not in effect) to avoid race conditions
   markdownRef.current = markdown
   lastSavedRef.current = lastSavedMarkdown
+  /* eslint-enable react-hooks/refs */
 
   const slidesSyncKey = useMemo(
     () =>
@@ -221,73 +222,64 @@ export function DeckEditorWorkspace({
   useEffect(() => {
     let active = true
 
-    const syncImportedUploads = async () => {
+    const syncPendingCount = async () => {
       const importIds = extractLocalImportedSlideIds(markdownRef.current)
       if (importIds.length === 0) {
-        if (active) {
-          setPendingImportedUploads(0)
-        }
+        if (active) setPendingImportedUploads(0)
         return
       }
-
       const records = await Promise.all(
         importIds.map((id) => getImportedSlideRecord(id)),
       )
       if (!active) return
-
-      const unresolved = records.filter(
-        (record) => !record || record.remoteUrl == null,
-      ).length
-      setPendingImportedUploads(unresolved)
+      setPendingImportedUploads(
+        records.filter((record) => !record || record.remoteUrl == null).length,
+      )
     }
 
-    void syncImportedUploads()
+    const flushRemoteForIds = async (ids: string[]) => {
+      for (const importId of ids) {
+        const result = await ensureImportedSlideUploaded(importId)
+        if (!result.remoteUrl) continue
+        const url = result.remoteUrl
+        setMarkdown((current) => {
+          const next = replaceImportedSlideSource(
+            current,
+            `local://${importId}`,
+            url,
+          )
+          return next === current ? current : next
+        })
+      }
+    }
+
+    const runFullSync = async () => {
+      await syncPendingCount()
+      const ids = extractLocalImportedSlideIds(markdownRef.current)
+      if (ids.length > 0) await flushRemoteForIds(ids)
+    }
+
+    void runFullSync()
 
     const unsubscribe = subscribeToImportedSlideChanges((importId) => {
       if (!extractLocalImportedSlideIds(markdownRef.current).includes(importId)) {
         return
       }
-
-      void syncImportedUploads()
-      void ensureImportedSlideUploaded(importId).then((result) => {
-        if (!result.remoteUrl) return
-        setMarkdown((current) =>
-          replaceImportedSlideSource(
-            current,
-            `local://${importId}`,
-            result.remoteUrl!,
-          ),
-        )
-      })
+      void (async () => {
+        await syncPendingCount()
+        await flushRemoteForIds([importId])
+      })()
     })
+
+    const timer = window.setInterval(() => {
+      void runFullSync()
+    }, 15000)
 
     return () => {
       active = false
       unsubscribe()
+      window.clearInterval(timer)
     }
-  }, [markdown])
-
-  useEffect(() => {
-    const importIds = extractLocalImportedSlideIds(markdown)
-    if (importIds.length === 0) return
-
-    const syncRemoteSources = () => {
-      for (const importId of importIds) {
-        void ensureImportedSlideUploaded(importId).then((result) => {
-          if (!result.remoteUrl) return
-          setMarkdown((current) =>
-            replaceImportedSlideSource(
-              current,
-              `local://${importId}`,
-              result.remoteUrl!,
-            ),
-          )
-        })
-      }
-    }
-    syncRemoteSources()
-    const timer = window.setInterval(syncRemoteSources, 15000)
-    return () => window.clearInterval(timer)
   }, [markdown])
 
   useEffect(() => {
@@ -317,7 +309,7 @@ export function DeckEditorWorkspace({
           }
         }
 
-        const result = await uploadImageToSupabase(blob)
+        const result = await uploadSlideImage(blob)
         if ("error" in result) {
           setError(result.error)
           return result

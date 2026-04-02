@@ -1,6 +1,6 @@
 "use client"
 
-import { useContext, useMemo, useRef } from "react"
+import { useContext, useEffect, useMemo, useRef, useState } from "react"
 
 import type { Loaded } from "jazz-tools"
 import type { QuestionBlock } from "@/features/decks/parse-slide-question"
@@ -52,10 +52,6 @@ function InlineMd({ markdown, className }: { markdown: string; className?: strin
 function formatPercent(frac: number): string {
   if (frac <= 0) return "0%"
   return `${(frac * 100).toFixed(1)}%`
-}
-
-function formatAnsweredCount(n: number): string {
-  return `${n} responses`
 }
 
 function hashSeed(input: string): number {
@@ -213,12 +209,12 @@ function AudienceQuestionRevealFeedback({
       : "bg-red-500/12 text-red-950 dark:bg-red-500/20 dark:text-red-50"
     : "bg-card text-foreground"
 
-  const title = hasAnswered ? (isCorrect ? "Correct!" : "Incorrect") : "No response submitted"
+  const title = hasAnswered ? (isCorrect ? "Correct!" : "Not quite!") : "Time's up!"
   const subtitle = hasAnswered
     ? isCorrect
-      ? "Nice work - you picked the right answer."
-      : "You can still learn from this one."
-    : "The question has ended. Here is the correct option."
+      ? "Great job! That's the correct answer."
+      : "Don't sweat it, you'll get the next one!"
+    : "You missed this one, but here's the correct answer."
 
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col items-center justify-center px-6 py-8", toneClass)}>
@@ -255,6 +251,7 @@ type QuestionSlideCardProps = {
   layout?: QuestionSlideLayout
   counts: number[]
   answeredCount: number
+  viewerCount?: number
   myAnswer: number | null
   audienceAccountId?: string
   /** When set, that option is omitted from the audience answer grid (e.g. 1/4 power-up). */
@@ -286,6 +283,7 @@ function QuestionSlideCardContent({
   layout = "card",
   counts,
   answeredCount,
+  viewerCount,
   myAnswer,
   audienceAccountId,
   audienceHideCanonicalOptionIndex,
@@ -355,6 +353,29 @@ function QuestionSlideCardContent({
   const canSubmit =
     Boolean(onSubmit) && accountReady && !submitPending
 
+  const [countdownEnd, setCountdownEnd] = useState<number | null>(null)
+  const [timeLeft, setTimeLeft] = useState<number | null>(null)
+
+  const latestOnStop = useRef(onStop)
+  useEffect(() => {
+    latestOnStop.current = onStop
+  }, [onStop])
+
+  useEffect(() => {
+    if (countdownEnd === null) return
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((countdownEnd - Date.now()) / 1000)
+      if (remaining <= 0) {
+        setTimeLeft(0)
+        setCountdownEnd(null)
+        latestOnStop.current?.()
+      } else {
+        setTimeLeft(remaining)
+      }
+    }, 100)
+    return () => clearInterval(interval)
+  }, [countdownEnd])
+
   if (audienceTheater) {
     const gridCols = audienceGridColsClass(audienceAnswerRows.length)
     const submitDisabled = !canSubmit
@@ -365,19 +386,19 @@ function QuestionSlideCardContent({
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="text-2xl font-bold text-foreground">Get ready!</p>
             <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
-              The question will begin shortly. Stay tuned.
+              The next question is coming right up. Eyes on the screen!
             </p>
           </div>
         ) : null}
 
         {showAudienceSubmitted ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-            <p className="text-2xl font-bold text-foreground">Response received!</p>
+            <p className="text-2xl font-bold text-foreground">Got your answer!</p>
             <div className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
               +10 PlayPoints
             </div>
             <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
-              Hang tight! Results will be revealed once everyone has finished.
+              Hang tight! We&apos;ll reveal the results once everyone has answered.
             </p>
             {myRow ? (
               <div className="w-full max-w-md rounded-none border border-border/80 bg-card/80 px-5 py-4 text-left">
@@ -492,20 +513,57 @@ function QuestionSlideCardContent({
               </Button>
             ) : null
           ) : showPresenterOpen ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {formatAnsweredCount(answeredCount)}
-              </span>
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end gap-1.5 text-[11px] text-muted-foreground">
+                {viewerCount !== undefined && viewerCount > 0 ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                       <span className="tabular-nums font-semibold">{answeredCount} / {viewerCount} responses</span>
+                       <div className="flex h-1.5 w-16 overflow-hidden rounded-full bg-border shadow-inner">
+                         <div className="h-full bg-primary transition-all duration-300" style={{ width: `${Math.min(100, (answeredCount / viewerCount) * 100)}%` }} />
+                       </div>
+                    </div>
+                  </>
+                ) : (
+                  <span className="tabular-nums font-semibold">{answeredCount} responses</span>
+                )}
+              </div>
               {onStop ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="rounded-none"
-                  onClick={onStop}
-                >
-                  End & Reveal
-                </Button>
+                <>
+                  {countdownEnd ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-none border-amber-500/50 text-amber-500"
+                      onClick={() => setCountdownEnd(null)}
+                    >
+                      {timeLeft}s remaining
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-none"
+                      onClick={() => {
+                        setCountdownEnd(Date.now() + 27 * 1000)
+                        setTimeLeft(27)
+                      }}
+                    >
+                      Countdown
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-none"
+                    onClick={onStop}
+                  >
+                    End & Reveal
+                  </Button>
+                </>
               ) : null}
             </div>
           ) : state === "revealed" ? (
@@ -638,7 +696,11 @@ function QuestionSlideCardContent({
             overlay && "justify-between",
           )}
         >
-          <span>{formatAnsweredCount(answeredCount)}</span>
+          <span>
+            {viewerCount !== undefined && viewerCount > 0
+              ? `${answeredCount} / ${viewerCount} responses`
+              : `${answeredCount} responses`}
+          </span>
         </div>
       ) : null}
 

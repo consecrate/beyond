@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState, type CSSProperties } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 
 import type { PollBlock } from "@/features/decks/parse-slide-poll"
 import { slideMarkdownToSafeHtml } from "@/features/decks/render-slide-markdown"
@@ -199,6 +199,7 @@ export function PollSlideCard({
   votePending,
   voteAccountReady = true,
   pollClosed = false,
+  viewerCount,
   onClosePoll,
 }: {
   block: PollBlock
@@ -213,6 +214,7 @@ export function PollSlideCard({
   /** When false, submit is disabled (e.g. Jazz account still loading). */
   voteAccountReady?: boolean
   pollClosed?: boolean
+  viewerCount?: number
   onClosePoll?: () => void
 }) {
   const [selected, setSelected] = useState<number | null>(null)
@@ -239,6 +241,29 @@ export function PollSlideCard({
   const maxCount = counts.length > 0 ? Math.max(...counts) : 0
   const overlayMode: OverlayOptionMode = showPollRadios ? "selecting" : "results"
 
+  const [countdownEnd, setCountdownEnd] = useState<number | null>(null)
+  const [timeLeft, setTimeLeft] = useState<number | null>(null)
+
+  const latestOnClosePoll = useRef(onClosePoll)
+  useEffect(() => {
+    latestOnClosePoll.current = onClosePoll
+  }, [onClosePoll])
+
+  useEffect(() => {
+    if (countdownEnd === null) return
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((countdownEnd - Date.now()) / 1000)
+      if (remaining <= 0) {
+        setTimeLeft(0)
+        setCountdownEnd(null)
+        latestOnClosePoll.current?.()
+      } else {
+        setTimeLeft(remaining)
+      }
+    }, 100)
+    return () => clearInterval(interval)
+  }, [countdownEnd])
+
   if (audienceTheater) {
     const orderedOptions = block.options.map((opt, index) => ({ opt, index }))
     const showAudienceSelection = myVote == null && !pollClosed
@@ -252,14 +277,14 @@ export function PollSlideCard({
       <article className="flex h-full min-h-0 w-full flex-col">
         {showAudienceSubmitted ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-            <p className="text-2xl font-bold text-foreground">Response received!</p>
+            <p className="text-2xl font-bold text-foreground">Got your vote!</p>
             <div className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
               +10 PlayPoints
             </div>
             <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
               {pollClosed
-                ? "The poll has ended. Look at the presenter's screen for results!"
-                : "Hang tight! Results will be revealed once everyone has finished."}
+                ? "The poll has ended. Check out the results on the main screen!"
+                : "Hang tight! We'll show the results as soon as everyone finishes."}
             </p>
             {myOption ? (
               <div className="w-full max-w-md rounded-none border border-border/80 bg-card/80 px-5 py-4 text-left">
@@ -309,9 +334,9 @@ export function PollSlideCard({
 
         {showMissed ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-            <p className="text-2xl font-bold text-foreground">Poll Closed</p>
+            <p className="text-2xl font-bold text-foreground">Time&apos;s up!</p>
             <p className="max-w-sm text-base leading-relaxed text-muted-foreground">
-              You didn&apos;t cast a vote in time. Look at the presenter&apos;s screen for results!
+              You missed this poll, but you can still check out the results on the main screen!
             </p>
           </div>
         ) : null}
@@ -344,17 +369,64 @@ export function PollSlideCard({
         </p>
         {variant === "presenter" && overlay ? (
           pollClosed ? (
-            <span className="text-xs text-muted-foreground">Final results</span>
+            <div className="flex flex-col items-end gap-0.5 text-xs">
+              <span className="text-muted-foreground">Final results</span>
+              {viewerCount !== undefined && viewerCount > 0 ? (
+                <span className="tabular-nums text-[10px] text-muted-foreground/70">{totalVotes} / {viewerCount} responses</span>
+              ) : (
+                <span className="tabular-nums text-[10px] text-muted-foreground/70">{totalVotes} responses</span>
+              )}
+            </div>
           ) : onClosePoll ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-none"
-              onClick={onClosePoll}
-            >
-              End Poll
-            </Button>
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end gap-1.5 text-[11px] text-muted-foreground">
+                {viewerCount !== undefined && viewerCount > 0 ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                       <span className="tabular-nums font-semibold">{totalVotes} / {viewerCount} responses</span>
+                       <div className="flex h-1.5 w-16 overflow-hidden rounded-full bg-border shadow-inner">
+                         <div className="h-full bg-primary transition-all duration-300" style={{ width: `${Math.min(100, (totalVotes / viewerCount) * 100)}%` }} />
+                       </div>
+                    </div>
+                  </>
+                ) : (
+                  <span className="tabular-nums font-semibold">{totalVotes} responses</span>
+                )}
+              </div>
+              {countdownEnd ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-none bg-background/50 shadow-sm border-amber-500/50 text-amber-500"
+                  onClick={() => setCountdownEnd(null)}
+                >
+                  {timeLeft}s remaining
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-none bg-background/50 shadow-sm"
+                  onClick={() => {
+                    setCountdownEnd(Date.now() + 27 * 1000)
+                    setTimeLeft(27)
+                  }}
+                >
+                  Countdown
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-none bg-background/50 shadow-sm"
+                onClick={onClosePoll}
+              >
+                End Poll
+              </Button>
+            </div>
           ) : null
         ) : null}
       </div>

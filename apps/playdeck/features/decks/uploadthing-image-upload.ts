@@ -1,10 +1,8 @@
 "use client"
 
-import { getSupabaseBrowserClient } from "@/lib/supabase/client"
+import { uploadFiles } from "@/lib/uploadthing/client"
 
-const DEFAULT_BUCKET = "playdeck-images"
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
-const MAX_IMAGE_EDGE = 1920
 
 type UploadProfile = "inline" | "imported-slide"
 
@@ -156,7 +154,10 @@ async function optimizeImageForSlide(
   }
 }
 
-export async function uploadImageToSupabase(
+/**
+ * Uploads an optimized slide image via UploadThing. Same contract as the former Supabase helper.
+ */
+export async function uploadSlideImage(
   blob: Blob,
   options?: { profile?: UploadProfile },
 ): Promise<{ url: string } | { error: string }> {
@@ -172,29 +173,21 @@ export async function uploadImageToSupabase(
       return { error: "Images must be 5 MB or smaller." }
     }
 
-    const supabase = getSupabaseBrowserClient()
-    const bucket =
-      process.env.NEXT_PUBLIC_SUPABASE_IMAGE_BUCKET || DEFAULT_BUCKET
-    const path = `slides/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext}`
+    const name = `slides/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext}`
+    const file = new File([optimizedBlob], name, {
+      type: optimizedBlob.type || `image/${ext}`,
+    })
 
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(path, optimizedBlob, {
-        cacheControl: "31536000",
-        contentType: optimizedBlob.type,
-        upsert: false,
-      })
+    const uploaded = await uploadFiles("slideImage", {
+      files: [file],
+    })
 
-    if (error) {
-      return { error: error.message }
-    }
-
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-    if (!data.publicUrl) {
+    const first = uploaded[0]
+    if (!first?.url) {
       return { error: "Could not resolve uploaded image URL." }
     }
 
-    return { url: data.publicUrl }
+    return { url: first.url }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Upload failed",

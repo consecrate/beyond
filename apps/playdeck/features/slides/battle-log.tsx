@@ -42,6 +42,7 @@ export function BattleLog({ liveSession, variant, onNextQuestion }: BattleLogPro
     attacker_name: string
     target_name: string
     was_correct: boolean
+    attacker_correct_percentage?: number
     damage: number
     target_hp_before: number
     target_hp_after: number
@@ -61,6 +62,7 @@ export function BattleLog({ liveSession, variant, onNextQuestion }: BattleLogPro
           attacker_name: e.attacker_name,
           target_name: e.target_name,
           was_correct: e.was_correct,
+          attacker_correct_percentage: e.attacker_correct_percentage,
           damage: e.damage,
           target_hp_before: e.target_hp_before,
           target_hp_after: e.target_hp_after,
@@ -119,10 +121,13 @@ export function BattleLog({ liveSession, variant, onNextQuestion }: BattleLogPro
           ) : (
             <ul className="space-y-3">
               {entries.map((row, i) => {
+                const attackerColor = teams.find(t => t.id === row.attacker_team_id)?.color?.split(' ').find(c => c.startsWith('text-')) || "text-amber-500"
+                const targetColor = teams.find(t => t.id === row.target_team_id)?.color?.split(' ').find(c => c.startsWith('text-')) || "text-sky-400"
+
                 const outcome = !row.target_team_id
                   ? "No target selected"
                   : !row.was_correct
-                    ? "Missed — wrong answer"
+                    ? `Missed (${row.attacker_correct_percentage ?? 0}% correct)`
                     : row.damage > 0
                       ? `Hit ${row.target_name} for ${row.damage} HP`
                       : "No damage"
@@ -135,16 +140,16 @@ export function BattleLog({ liveSession, variant, onNextQuestion }: BattleLogPro
                 return (
                   <li
                     key={`${row.attacker_team_id}-${row.target_team_id}-${i}`}
-                    className="rounded-lg border border-border/60 bg-background/30 px-4 py-3 text-left"
+                    className="rounded-lg border border-white/10 bg-white/5 shadow-md backdrop-blur-md px-4 py-3 text-left"
                   >
                     <p className="text-sm font-bold text-foreground">
-                      <span className="text-amber-500">{row.attacker_name}</span>
-                      <span className="mx-2 font-normal text-muted-foreground">→</span>
-                      <span className="text-sky-400">{row.target_name}</span>
+                      <span className={attackerColor}>{row.attacker_name}</span>
+                      <span className="mx-2 font-normal text-white">→</span>
+                      <span className={targetColor}>{row.target_name}</span>
                     </p>
-                    <p className="mt-1 text-sm text-muted-foreground">{outcome}</p>
+                    <p className="mt-1 text-sm text-white">{outcome}</p>
                     {hpLine ? (
-                      <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+                      <p className="mt-1 text-xs tabular-nums text-white">
                         {hpLine}
                       </p>
                     ) : null}

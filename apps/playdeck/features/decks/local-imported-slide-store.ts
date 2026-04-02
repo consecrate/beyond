@@ -1,7 +1,7 @@
 "use client"
 
 import { createLocalImportedSlideSource } from "@/features/decks/parse-slide-import"
-import { uploadImageToSupabase } from "@/features/decks/supabase-image-upload"
+import { uploadSlideImage } from "@/features/decks/uploadthing-image-upload"
 
 const DB_NAME = "playdeck-imported-slides"
 const STORE_NAME = "slides"
@@ -62,17 +62,20 @@ async function withStore<T>(
   }
 
   const db = await openDb()
-  return new Promise<T>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, mode)
-    const store = tx.objectStore(STORE_NAME)
-    const request = fn(store)
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, mode)
+      const store = tx.objectStore(STORE_NAME)
+      const request = fn(store)
 
-    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed."))
-    request.onsuccess = () => resolve(request.result)
-    tx.oncomplete = () => db.close()
-    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed."))
-    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted."))
-  })
+      request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed."))
+      request.onsuccess = () => resolve(request.result)
+      tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed."))
+      tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted."))
+    })
+  } finally {
+    db.close()
+  }
 }
 
 export async function createLocalImportedSlideRecord(
@@ -166,7 +169,7 @@ export async function ensureImportedSlideUploaded(
       lastError: null,
     })
 
-    const result = await uploadImageToSupabase(record.blob, {
+    const result = await uploadSlideImage(record.blob, {
       profile: "imported-slide",
     })
 

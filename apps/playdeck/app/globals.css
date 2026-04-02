@@ -94,6 +94,71 @@
   overflow: auto;
 }
 
+/* Playdeck-owned fenced code blocks */
+.slide-markdown-prose .slide-codeblock {
+  --slide-codeblock-bg: #0d1117;
+  --slide-codeblock-header-bg: #161b22;
+  --slide-codeblock-border: rgba(255, 255, 255, 0.1);
+  margin: clamp(0.75rem, 2vw, 1.25rem) auto;
+  max-width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--slide-codeblock-border);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 12px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  background: var(--slide-codeblock-header-bg);
+}
+
+.slide-markdown-prose .slide-codeblock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--slide-codeblock-header-bg);
+}
+
+.slide-markdown-prose .slide-codeblock-language {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.slide-markdown-prose .slide-codeblock-pre {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  max-height: min(48vh, 22rem);
+  overflow: auto;
+  background: var(--slide-codeblock-bg);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.slide-markdown-prose .slide-codeblock-code {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.85rem 1rem 1rem;
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  tab-size: 2;
+  color: rgba(255, 255, 255, 0.96);
+}
+
 .slide-markdown-prose :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, figcaption) {
   overflow-wrap: anywhere;
 }

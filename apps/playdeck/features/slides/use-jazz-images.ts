@@ -12,6 +12,21 @@ const imageCache = new Map<string, { url: string; width: number }>()
 // Track which component instance is responsible for each pending load
 const pendingLoads = new Map<string, string>() // imageId -> instanceId
 
+function revokeIfBlobUrl(url: string) {
+  if (url.startsWith("blob:")) {
+    URL.revokeObjectURL(url)
+  }
+}
+
+/** Revokes all cached blob URLs and clears caches (e.g. tests or full reset). */
+export function clearImageCache(): void {
+  for (const { url } of imageCache.values()) {
+    revokeIfBlobUrl(url)
+  }
+  imageCache.clear()
+  pendingLoads.clear()
+}
+
 /** Apply cached URL to all matching img elements in the document */
 function applyCachedUrl(id: string, url: string) {
   document.querySelectorAll<HTMLImageElement>(`img[data-jazz-id="${id}"]`).forEach((img) => {
@@ -47,6 +62,8 @@ function cacheLoadedOriginal(
       PRESENTATION_IMAGE_MAX_WIDTH,
     PRESENTATION_IMAGE_MAX_WIDTH,
   )
+  const prev = imageCache.get(id)
+  if (prev) revokeIfBlobUrl(prev.url)
   imageCache.set(id, { url, width })
   applyCachedUrl(id, url)
   return true
