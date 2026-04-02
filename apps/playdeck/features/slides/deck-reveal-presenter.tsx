@@ -7,6 +7,7 @@ import type { Loaded } from "jazz-tools"
 import { useAccount } from "jazz-tools/react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
+import { importedSlideRevealBackgroundUrl } from "@/features/decks/parse-slide-import"
 import {
   aggregatePollCounts,
   aggregateQuestionCounts,
@@ -175,6 +176,14 @@ export function RevealSlideBody({
   }
 
   if (!show) {
+    if (
+      slide.importedImage &&
+      importedSlideRevealBackgroundUrl(slide.importedImage.src)
+    ) {
+      return (
+        <div className="h-0 w-0 overflow-hidden opacity-0" aria-hidden />
+      )
+    }
     return (
       <div
         className="flex min-h-[min(70vh,700px)] w-full max-w-4xl items-center justify-center"
@@ -186,6 +195,17 @@ export function RevealSlideBody({
   }
 
   if (slide.importedImage) {
+    const bgUrl = importedSlideRevealBackgroundUrl(slide.importedImage.src)
+    if (bgUrl) {
+      return (
+        <div className="flex h-full w-full min-h-0 flex-col">
+          <span className="sr-only">
+            {slide.title.trim() || "Imported slide"}
+          </span>
+          <div className="min-h-0 flex-1" aria-hidden />
+        </div>
+      )
+    }
     return (
       <ImportedSlideFrame
         source={slide.importedImage.src}
@@ -708,19 +728,37 @@ export function DeckRevealPresenter({
               >
                 <div ref={revealRef} className="reveal h-full min-h-[50vh]">
                   <div className="slides">
-                    {slides.map((slide, i) => (
-                      <section
-                        key={i}
-                        className="flex items-center justify-center !p-4"
-                        data-background-color="#0d1117"
-                      >
-                        <RevealSlideBody
-                          slide={slide}
-                          slideIndex={i}
-                          activeIndex={activeIndex}
-                        />
-                      </section>
-                    ))}
+                    {slides.map((slide, i) => {
+                      const importedBgUrl =
+                        slide.importedImage &&
+                        importedSlideRevealBackgroundUrl(
+                          slide.importedImage.src,
+                        )
+                      return (
+                        <section
+                          key={i}
+                          className={cn(
+                            "flex items-center justify-center",
+                            slide.importedImage ? "!p-0" : "!p-4",
+                          )}
+                          data-background-color="#0d1117"
+                          {...(importedBgUrl
+                            ? {
+                                "data-background-image": importedBgUrl,
+                                "data-background-size": "cover",
+                                "data-background-position": "center",
+                                "data-background-repeat": "no-repeat",
+                              }
+                            : {})}
+                        >
+                          <RevealSlideBody
+                            slide={slide}
+                            slideIndex={i}
+                            activeIndex={activeIndex}
+                          />
+                        </section>
+                      )
+                    })}
                   </div>
                 </div>
               </div>

@@ -13,6 +13,7 @@ import Link from "next/link"
 import { Star, CheckCircle2, Users, LogOut, Loader2, ShoppingBag, Package } from "lucide-react"
 
 import type { RevealSlideModel } from "@/features/decks/slide-timeline"
+import { importedSlideRevealBackgroundUrl } from "@/features/decks/parse-slide-import"
 import {
   aggregatePollCounts,
   aggregateQuestionCounts,
@@ -404,19 +405,37 @@ export function LiveRevealFollower({
               >
                 <div ref={revealRef} className="reveal h-full min-h-[50vh]">
                   <div className="slides">
-                    {slides.map((slide, i) => (
-                      <section
-                        key={i}
-                        className="flex items-center justify-center !p-4"
-                        data-background-color="#0d1117"
-                      >
-                        <RevealSlideBody
-                          slide={slide}
-                          slideIndex={i}
-                          activeIndex={revealIndex}
-                        />
-                      </section>
-                    ))}
+                    {slides.map((slide, i) => {
+                      const importedBgUrl =
+                        slide.importedImage &&
+                        importedSlideRevealBackgroundUrl(
+                          slide.importedImage.src,
+                        )
+                      return (
+                        <section
+                          key={i}
+                          className={cn(
+                            "flex items-center justify-center",
+                            slide.importedImage ? "!p-0" : "!p-4",
+                          )}
+                          data-background-color="#0d1117"
+                          {...(importedBgUrl
+                            ? {
+                                "data-background-image": importedBgUrl,
+                                "data-background-size": "cover",
+                                "data-background-position": "center",
+                                "data-background-repeat": "no-repeat",
+                              }
+                            : {})}
+                        >
+                          <RevealSlideBody
+                            slide={slide}
+                            slideIndex={i}
+                            activeIndex={revealIndex}
+                          />
+                        </section>
+                      )
+                    })}
                   </div>
                 </div>
               </div>
